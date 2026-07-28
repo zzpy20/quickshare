@@ -107,6 +107,11 @@ function copyToClipboard(btn, url) {
   btn.textContent = 'Copied!';
   setTimeout(() => (btn.textContent = orig), 1500);
 }
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
 `;
 
 const PAGE = `<!doctype html>
@@ -162,7 +167,7 @@ function handleFiles(files) {
   const rows = arr.map((f) => {
     const row = document.createElement('div');
     row.className = 'row';
-    row.innerHTML = '<div class="name">' + f.name + '</div><div class="status">Uploading…</div>';
+    row.innerHTML = '<div class="name">' + escapeHtml(f.name) + '</div><div class="status">Uploading…</div>';
     list.prepend(row);
     return row;
   });
@@ -186,9 +191,9 @@ function handleFiles(files) {
         const full = location.origin + u.url;
         row.className = 'row';
         row.innerHTML =
-          '<div class="name">' + u.name + '</div>' +
-          '<a href="' + full + '" target="_blank">open</a>' +
-          '<button class="secondary copy-btn" data-url="' + full + '">Copy</button>';
+          '<div class="name">' + escapeHtml(u.name) + '</div>' +
+          '<a href="' + escapeHtml(full) + '" target="_blank">open</a>' +
+          '<button class="secondary copy-btn" data-url="' + escapeHtml(full) + '">Copy</button>';
         row.querySelector('.copy-btn').onclick = (e) => copyToClipboard(e.target, e.target.dataset.url);
       });
       if (batchUrl) {
@@ -214,6 +219,12 @@ function handleFiles(files) {
 </body>
 </html>`;
 
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
 function batchPage(id, manifest) {
   const items = manifest
     .map((m) => {
@@ -223,7 +234,7 @@ function batchPage(id, manifest) {
         '<div class="row" style="flex-direction:column;align-items:stretch;">' +
         preview +
         '<div style="display:flex;align-items:center;gap:10px;">' +
-        '<div class="name">' + m.name + '</div>' +
+        '<div class="name">' + escapeHtml(m.name) + '</div>' +
         '<a href="' + url + '" target="_blank">open</a>' +
         '</div></div>'
       );
@@ -351,22 +362,23 @@ function render() {
 
     const rows = files.map((f) => {
       const full = location.origin + f.url;
+      const key = escapeHtml(f.key);
       const expiry = pendingByKey[f.key]
         ? '<span class="meta expiring">⏳ ' + fmtExpiry(pendingByKey[f.key]) + '</span>'
         : '';
       return (
         '<div class="file-row">' +
         '<div class="file-row-top">' +
-        '<input type="checkbox" class="file-check" data-key="' + f.key + '">' +
-        '<div class="name">' + f.name + '</div>' +
+        '<input type="checkbox" class="file-check" data-key="' + key + '">' +
+        '<div class="name">' + escapeHtml(f.name) + '</div>' +
         '</div>' +
         '<div class="file-row-actions">' +
         expiry +
         '<div class="meta">' + fmtSize(f.size) + ' · ' + fmtDate(f.uploaded) + '</div>' +
-        '<a href="' + full + '" target="_blank">open</a>' +
-        '<button class="secondary small copy-file" data-url="' + full + '">Copy</button>' +
-        '<button class="secondary small regen" data-key="' + f.key + '">Regenerate</button>' +
-        '<button class="secondary small del" data-key="' + f.key + '">Delete</button>' +
+        '<a href="' + escapeHtml(full) + '" target="_blank">open</a>' +
+        '<button class="secondary small copy-file" data-url="' + escapeHtml(full) + '">Copy</button>' +
+        '<button class="secondary small regen" data-key="' + key + '">Regenerate</button>' +
+        '<button class="secondary small del" data-key="' + key + '">Delete</button>' +
         '</div>' +
         '</div>'
       );
@@ -590,7 +602,7 @@ export default {
       }
 
       return Response.json({
-        files: manifest.map((m) => ({ name: m.name, url: '/f/' + id + '/' + m.name })),
+        files: manifest.map((m) => ({ name: m.name, url: '/f/' + id + '/' + encodeURIComponent(m.name) })),
         batchUrl: manifest.length > 1 ? '/b/' + id : null,
       });
     }
@@ -609,14 +621,16 @@ export default {
         .filter((o) => !o.key.endsWith('/_manifest.json') && !o.key.startsWith('_system/'))
         .map((o) => {
           const slash = o.key.indexOf('/');
+          const id = o.key.slice(0, slash);
+          const name = o.key.slice(slash + 1);
           return {
             key: o.key,
-            id: o.key.slice(0, slash),
-            name: o.key.slice(slash + 1),
+            id,
+            name,
             size: o.size,
             uploaded: o.uploaded,
             contentType: o.httpMetadata && o.httpMetadata.contentType,
-            url: '/f/' + o.key,
+            url: '/f/' + id + '/' + encodeURIComponent(name),
           };
         });
       const batchIds = objects
@@ -660,7 +674,7 @@ export default {
       pending.push({ key, deleteAt: Date.now() + GRACE_MS });
       await putPendingDeletes(env.SHARE_R2, pending);
 
-      return Response.json({ url: '/f/' + newKey, oldExpiresAt: Date.now() + GRACE_MS });
+      return Response.json({ url: '/f/' + newId + '/' + encodeURIComponent(name), oldExpiresAt: Date.now() + GRACE_MS });
     }
 
     if (request.method === 'GET' && pathname.startsWith('/b/')) {
