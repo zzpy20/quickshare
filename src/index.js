@@ -65,7 +65,8 @@ const STYLE = `
   .file-row-top { display: flex; align-items: center; gap: 10px; }
   .file-row-top input { flex-shrink: 0; }
   .file-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .thumb { width: 36px; height: 36px; border-radius: 8px; object-fit: cover; flex-shrink: 0; cursor: zoom-in; background: #f5f5f7; }
+  .thumb { width: 44px; height: 44px; border-radius: 8px; object-fit: cover; flex-shrink: 0; cursor: zoom-in; background: #f5f5f7; }
+  @media (min-width: 900px) { .thumb { width: 72px; height: 72px; border-radius: 10px; } }
   @media (prefers-color-scheme: dark) { .thumb { background: #2c2c2e; } }
   #lightbox {
     display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85);
