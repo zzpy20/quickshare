@@ -16,17 +16,18 @@ const STYLE = `
   @media (prefers-color-scheme: dark) {
     body { background: #1c1c1e; color: #f5f5f7; }
     #drop { border-color: #48484a !important; background: #2c2c2e !important; }
-    input[type=password] { background: #2c2c2e; color: #f5f5f7; border-color: #48484a; }
+    input[type=password], input[type=search] { background: #2c2c2e; color: #f5f5f7; border-color: #48484a; }
     .row { background: #2c2c2e !important; }
     .row.batch { background: #1c2e42 !important; }
   }
   h1 { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
   p.sub { color: #86868b; margin-top: 0; font-size: 14px; }
   #auth { display: flex; gap: 8px; margin: 20px 0; }
-  input[type=password] {
+  input[type=password], input[type=search] {
     flex: 1; padding: 10px 12px; border-radius: 10px; border: 1px solid #d2d2d7;
-    font-size: 14px;
+    font-size: 14px; width: 100%;
   }
+  #searchBox { margin: 20px 0 0; }
   button {
     padding: 10px 16px; border-radius: 10px; border: none; background: #0071e3;
     color: #fff; font-size: 14px; font-weight: 500; cursor: pointer;
@@ -68,6 +69,8 @@ const STYLE = `
   .file-row .meta { color: #86868b; font-size: 12px; flex-shrink: 0; }
   .file-row .meta.expiring { color: #ff9500; font-weight: 600; }
   button.small { padding: 5px 10px; font-size: 12px; }
+  #pagination { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 20px 0; font-size: 13px; }
+  #pagination button:disabled { opacity: 0.4; cursor: default; }
   .fab {
     position: fixed; right: 20px; bottom: calc(20px + env(safe-area-inset-bottom));
     width: 56px; height: 56px; border-radius: 50%; background: #0071e3; color: #fff;
@@ -273,19 +276,26 @@ const ADMIN_PAGE = `<!doctype html>
 
   ${AUTH_BLOCK_HTML}
 
+  <input type="search" id="searchBox" placeholder="Search filenames…">
+
   <div id="toolbar">
-    <label><input type="checkbox" id="selectAll"> Select all</label>
+    <label><input type="checkbox" id="selectAll"> Select all on page</label>
     <button id="bulkDelete" class="secondary" style="display:none;">Delete selected</button>
     <button id="refresh" class="secondary">Refresh</button>
   </div>
 
+  <p class="sub" id="resultsSummary"></p>
+
   <div id="groups"></div>
+
+  <div id="pagination"></div>
 
   <a href="/" class="fab" title="Upload files">+</a>
 
 <script>
 const $ = (id) => document.getElementById(id);
 const banner = $('banner'), groupsEl = $('groups'), bulkBtn = $('bulkDelete'), selectAllBox = $('selectAll');
+const searchBox = $('searchBox'), paginationEl = $('pagination'), resultsSummary = $('resultsSummary');
 
 function showBanner(msg, isError) {
   banner.textContent = msg;
@@ -298,6 +308,9 @@ ${AUTH_JS}
 let allFiles = [];
 let batchIds = [];
 let pendingByKey = {};
+let searchTerm = '';
+let currentPage = 1;
+const PAGE_SIZE = 20;
 const selected = new Set();
 
 function fmtSize(bytes) {
@@ -338,20 +351,54 @@ function load() {
     .catch((err) => showBanner(err.message, true));
 }
 
-function render() {
-  updateBulkButton();
-  if (!allFiles.length) { groupsEl.innerHTML = '<p class="sub">No files yet.</p>'; return; }
-
+function computeView() {
   const byId = {};
   allFiles.forEach((f) => { (byId[f.id] = byId[f.id] || []).push(f); });
 
-  const ids = Object.keys(byId).sort((a, b) => {
+  let ids = Object.keys(byId).sort((a, b) => {
     const da = Math.max(...byId[a].map((f) => new Date(f.uploaded).getTime()));
     const db = Math.max(...byId[b].map((f) => new Date(f.uploaded).getTime()));
     return db - da;
   });
 
-  groupsEl.innerHTML = ids.map((id) => {
+  if (searchTerm) {
+    ids = ids.filter((id) => byId[id].some((f) => f.name.toLowerCase().includes(searchTerm)));
+  }
+
+  const totalGroups = ids.length;
+  const totalPages = Math.max(1, Math.ceil(totalGroups / PAGE_SIZE));
+  currentPage = Math.min(Math.max(currentPage, 1), totalPages);
+
+  const pageIds = ids.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
+  const visibleFiles = pageIds.flatMap((id) => byId[id]);
+  const totalFileCount = ids.reduce((sum, id) => sum + byId[id].length, 0);
+
+  return { byId, pageIds, visibleFiles, totalGroups, totalPages, totalFileCount };
+}
+
+function render() {
+  if (!allFiles.length) {
+    groupsEl.innerHTML = '<p class="sub">No files yet.</p>';
+    paginationEl.innerHTML = '';
+    resultsSummary.textContent = '';
+    updateBulkButton([]);
+    return;
+  }
+
+  const { byId, pageIds, visibleFiles, totalGroups, totalPages, totalFileCount } = computeView();
+
+  resultsSummary.textContent = searchTerm
+    ? totalFileCount + ' file(s) match "' + searchBox.value.trim() + '"'
+    : allFiles.length + ' file(s) total';
+
+  if (!totalGroups) {
+    groupsEl.innerHTML = '<p class="sub">No files match your search.</p>';
+    paginationEl.innerHTML = '';
+    updateBulkButton([]);
+    return;
+  }
+
+  groupsEl.innerHTML = pageIds.map((id) => {
     const files = byId[id];
     const isBatch = batchIds.includes(id);
     const head = isBatch
@@ -391,7 +438,7 @@ function render() {
     cb.checked = selected.has(cb.dataset.key);
     cb.onchange = () => {
       if (cb.checked) selected.add(cb.dataset.key); else selected.delete(cb.dataset.key);
-      updateBulkButton();
+      updateBulkButton(visibleFiles);
     };
   });
   groupsEl.querySelectorAll('.copy-batch, .copy-file').forEach((btn) => {
@@ -403,23 +450,43 @@ function render() {
   groupsEl.querySelectorAll('.regen').forEach((btn) => {
     btn.onclick = (e) => regenerate(e.target.dataset.key, e.target);
   });
+
+  paginationEl.innerHTML = totalPages > 1
+    ? '<button class="secondary small" id="prevPage"' + (currentPage <= 1 ? ' disabled' : '') + '>← Prev</button>' +
+      '<span>Page ' + currentPage + ' of ' + totalPages + '</span>' +
+      '<button class="secondary small" id="nextPage"' + (currentPage >= totalPages ? ' disabled' : '') + '>Next →</button>'
+    : '';
+  if (totalPages > 1) {
+    $('prevPage').onclick = () => { currentPage--; render(); };
+    $('nextPage').onclick = () => { currentPage++; render(); };
+  }
+
+  updateBulkButton(visibleFiles);
 }
 
-function updateBulkButton() {
+function updateBulkButton(visibleFiles) {
   bulkBtn.style.display = selected.size ? 'inline-block' : 'none';
   bulkBtn.textContent = 'Delete selected (' + selected.size + ')';
-  selectAllBox.checked = allFiles.length > 0 && selected.size === allFiles.length;
+  const keys = visibleFiles.map((f) => f.key);
+  selectAllBox.checked = keys.length > 0 && keys.every((k) => selected.has(k));
 }
 
 selectAllBox.onchange = () => {
-  if (selectAllBox.checked) allFiles.forEach((f) => selected.add(f.key));
-  else selected.clear();
+  const { visibleFiles } = computeView();
+  if (selectAllBox.checked) visibleFiles.forEach((f) => selected.add(f.key));
+  else visibleFiles.forEach((f) => selected.delete(f.key));
   render();
 };
 
 bulkBtn.onclick = () => {
   if (!confirm('Delete ' + selected.size + ' file(s)? This cannot be undone.')) return;
   deleteKeys([...selected]);
+};
+
+searchBox.oninput = () => {
+  searchTerm = searchBox.value.trim().toLowerCase();
+  currentPage = 1;
+  render();
 };
 
 $('refresh').onclick = load;
