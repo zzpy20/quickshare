@@ -65,6 +65,14 @@ const STYLE = `
   .file-row-top { display: flex; align-items: center; gap: 10px; }
   .file-row-top input { flex-shrink: 0; }
   .file-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .thumb { width: 36px; height: 36px; border-radius: 8px; object-fit: cover; flex-shrink: 0; cursor: zoom-in; background: #f5f5f7; }
+  @media (prefers-color-scheme: dark) { .thumb { background: #2c2c2e; } }
+  #lightbox {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+    align-items: center; justify-content: center; z-index: 2000; cursor: zoom-out; padding: 24px;
+  }
+  #lightbox.open { display: flex; }
+  #lightbox img { max-width: 100%; max-height: 100%; border-radius: 10px; }
   .file-row-actions { display: flex; align-items: center; gap: 8px; row-gap: 6px; flex-wrap: wrap; margin-top: 6px; padding-left: 26px; }
   .file-row .meta { color: #86868b; font-size: 12px; flex-shrink: 0; }
   .file-row .meta.expiring { color: #ff9500; font-weight: 600; }
@@ -292,10 +300,22 @@ const ADMIN_PAGE = `<!doctype html>
 
   <a href="/" class="fab" title="Upload files">+</a>
 
+  <div id="lightbox"><img id="lightboxImg" alt=""></div>
+
 <script>
 const $ = (id) => document.getElementById(id);
 const banner = $('banner'), groupsEl = $('groups'), bulkBtn = $('bulkDelete'), selectAllBox = $('selectAll');
 const searchBox = $('searchBox'), paginationEl = $('pagination'), resultsSummary = $('resultsSummary');
+const lightbox = $('lightbox'), lightboxImg = $('lightboxImg');
+
+function openLightbox(url) {
+  lightboxImg.src = url;
+  lightbox.classList.add('open');
+}
+lightbox.onclick = () => { lightbox.classList.remove('open'); lightboxImg.src = ''; };
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { lightbox.classList.remove('open'); lightboxImg.src = ''; }
+});
 
 function showBanner(msg, isError) {
   banner.textContent = msg;
@@ -413,10 +433,14 @@ function render() {
       const expiry = pendingByKey[f.key]
         ? '<span class="meta expiring">⏳ ' + fmtExpiry(pendingByKey[f.key]) + '</span>'
         : '';
+      const thumb = f.contentType && f.contentType.startsWith('image/')
+        ? '<img class="thumb" loading="lazy" src="' + escapeHtml(full) + '" data-full="' + escapeHtml(full) + '">'
+        : '';
       return (
         '<div class="file-row">' +
         '<div class="file-row-top">' +
         '<input type="checkbox" class="file-check" data-key="' + key + '">' +
+        thumb +
         '<div class="name">' + escapeHtml(f.name) + '</div>' +
         '</div>' +
         '<div class="file-row-actions">' +
@@ -449,6 +473,9 @@ function render() {
   });
   groupsEl.querySelectorAll('.regen').forEach((btn) => {
     btn.onclick = (e) => regenerate(e.target.dataset.key, e.target);
+  });
+  groupsEl.querySelectorAll('.thumb').forEach((img) => {
+    img.onclick = (e) => openLightbox(e.target.dataset.full);
   });
 
   paginationEl.innerHTML = totalPages > 1
