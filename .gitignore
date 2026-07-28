@@ -1,0 +1,4 @@
+node_modules/
+.wrangler/
+.upload-token.txt
+.DS_Store

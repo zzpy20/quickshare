@@ -1,0 +1,700 @@
+const STYLE = `
+  :root { color-scheme: light dark; }
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 40px 20px 80px;
+    background: #fff;
+    color: #1d1d1f;
+    overflow-x: hidden;
+  }
+  @media (min-width: 900px) {
+    body { max-width: 1000px; }
+  }
+  @media (prefers-color-scheme: dark) {
+    body { background: #1c1c1e; color: #f5f5f7; }
+    #drop { border-color: #48484a !important; background: #2c2c2e !important; }
+    input[type=password] { background: #2c2c2e; color: #f5f5f7; border-color: #48484a; }
+    .row { background: #2c2c2e !important; }
+    .row.batch { background: #1c2e42 !important; }
+  }
+  h1 { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
+  p.sub { color: #86868b; margin-top: 0; font-size: 14px; }
+  #auth { display: flex; gap: 8px; margin: 20px 0; }
+  input[type=password] {
+    flex: 1; padding: 10px 12px; border-radius: 10px; border: 1px solid #d2d2d7;
+    font-size: 14px;
+  }
+  button {
+    padding: 10px 16px; border-radius: 10px; border: none; background: #0071e3;
+    color: #fff; font-size: 14px; font-weight: 500; cursor: pointer;
+  }
+  button:hover { background: #0077ed; }
+  button.secondary { background: #e8e8ed; color: #1d1d1f; }
+  #drop {
+    border: 2px dashed #d2d2d7; border-radius: 16px; padding: 40px 20px;
+    text-align: center; color: #86868b; cursor: pointer; transition: border-color .15s;
+  }
+  #drop.hover { border-color: #0071e3; color: #0071e3; }
+  #fileInput { display: none; }
+  #list { margin-top: 24px; display: flex; flex-direction: column; gap: 10px; }
+  .row {
+    display: flex; align-items: center; gap: 10px; background: #f5f5f7;
+    border-radius: 10px; padding: 10px 12px; font-size: 13px;
+  }
+  .row.batch { background: #eaf3ff; font-weight: 600; }
+  .row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row .status { color: #86868b; flex-shrink: 0; }
+  .row a { color: #0071e3; text-decoration: none; flex-shrink: 0; }
+  .row.error .status { color: #ff3b30; }
+  #banner { display: none; margin-bottom: 16px; padding: 10px 14px; border-radius: 10px; font-size: 13px; }
+  #banner.error { display: block; background: #ffebe9; color: #cf222e; }
+  img.preview { max-width: 100%; border-radius: 10px; display: block; margin-bottom: 6px; }
+  a.footer-link { color: #86868b; font-size: 13px; }
+  #toolbar { display: flex; align-items: center; gap: 10px; margin: 20px 0; }
+  #toolbar label { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+  #bulkDelete { margin-left: auto; background: #ff3b30; }
+  .group { border: 1px solid #e5e5ea; border-radius: 12px; padding: 12px; margin-bottom: 14px; overflow: hidden; }
+  @media (prefers-color-scheme: dark) { .group { border-color: #38383a; } .file-row { border-top-color: #2c2c2e !important; } }
+  .group-head { display: flex; align-items: center; gap: 10px; row-gap: 6px; flex-wrap: wrap; margin-bottom: 8px; font-size: 12px; color: #86868b; }
+  .file-row { padding: 8px 0; font-size: 13px; border-top: 1px solid #f0f0f2; }
+  .file-row:first-of-type { border-top: none; }
+  .file-row-top { display: flex; align-items: center; gap: 10px; }
+  .file-row-top input { flex-shrink: 0; }
+  .file-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-row-actions { display: flex; align-items: center; gap: 8px; row-gap: 6px; flex-wrap: wrap; margin-top: 6px; padding-left: 26px; }
+  .file-row .meta { color: #86868b; font-size: 12px; flex-shrink: 0; }
+  .file-row .meta.expiring { color: #ff9500; font-weight: 600; }
+  button.small { padding: 5px 10px; font-size: 12px; }
+  .fab {
+    position: fixed; right: 20px; bottom: calc(20px + env(safe-area-inset-bottom));
+    width: 56px; height: 56px; border-radius: 50%; background: #0071e3; color: #fff;
+    display: flex; align-items: center; justify-content: center; font-size: 30px;
+    font-weight: 300; line-height: 1; text-decoration: none;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.28); z-index: 1000;
+  }
+  .fab:hover { background: #0077ed; }
+`;
+
+const AUTH_BLOCK_HTML = `
+  <div id="auth">
+    <input type="password" id="token" placeholder="Upload password">
+    <button id="saveToken">Save</button>
+  </div>
+`;
+
+const AUTH_JS = `
+const tokenInput = $('token'), authBox = $('auth');
+tokenInput.value = localStorage.getItem('quickshare_token') || '';
+function showAuth(forceOpen) {
+  const hasToken = !!localStorage.getItem('quickshare_token');
+  const open = forceOpen || !hasToken;
+  authBox.style.display = open ? 'flex' : 'none';
+  if (open) tokenInput.focus();
+}
+showAuth(false);
+$('saveToken').onclick = () => {
+  localStorage.setItem('quickshare_token', tokenInput.value);
+  showBanner('Saved.', false);
+  showAuth(false);
+};
+function authHeaders() { return { 'x-upload-token': localStorage.getItem('quickshare_token') || '' }; }
+function copyToClipboard(btn, url) {
+  navigator.clipboard.writeText(url);
+  const orig = btn.textContent;
+  btn.textContent = 'Copied!';
+  setTimeout(() => (btn.textContent = orig), 1500);
+}
+`;
+
+const PAGE = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quickshare</title>
+<style>${STYLE}</style>
+</head>
+<body>
+  <h1>quickshare</h1>
+  <p class="sub">Drop files, get a link.</p>
+
+  <div id="banner"></div>
+
+  ${AUTH_BLOCK_HTML}
+
+  <div id="drop">Drop files here, or click to choose</div>
+  <input type="file" id="fileInput" multiple>
+
+  <div id="list"></div>
+
+  <p class="sub" style="margin-top:40px;"><a class="footer-link" href="/admin">Admin →</a></p>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const drop = $('drop'), fileInput = $('fileInput'), list = $('list'), banner = $('banner');
+
+function showBanner(msg, isError) {
+  banner.textContent = msg;
+  banner.className = isError ? 'error' : '';
+  banner.style.display = msg ? 'block' : 'none';
+}
+
+${AUTH_JS}
+
+drop.onclick = () => fileInput.click();
+drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('hover'); };
+drop.ondragleave = () => drop.classList.remove('hover');
+drop.ondrop = (e) => {
+  e.preventDefault();
+  drop.classList.remove('hover');
+  handleFiles(e.dataTransfer.files);
+};
+fileInput.onchange = () => handleFiles(fileInput.files);
+
+function handleFiles(files) {
+  showBanner('', false);
+  const arr = [...files];
+  if (!arr.length) return;
+
+  const rows = arr.map((f) => {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = '<div class="name">' + f.name + '</div><div class="status">Uploading…</div>';
+    list.prepend(row);
+    return row;
+  });
+
+  const fd = new FormData();
+  arr.forEach((f) => fd.append('file', f, f.name));
+
+  fetch('/upload', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: fd,
+  })
+    .then(async (r) => {
+      if (r.status === 401) { showAuth(true); throw new Error('Wrong password'); }
+      if (!r.ok) throw new Error('Upload failed');
+      return r.json();
+    })
+    .then(({ files: uploaded, batchUrl }) => {
+      uploaded.forEach((u, i) => {
+        const row = rows[i];
+        const full = location.origin + u.url;
+        row.className = 'row';
+        row.innerHTML =
+          '<div class="name">' + u.name + '</div>' +
+          '<a href="' + full + '" target="_blank">open</a>' +
+          '<button class="secondary copy-btn" data-url="' + full + '">Copy</button>';
+        row.querySelector('.copy-btn').onclick = (e) => copyToClipboard(e.target, e.target.dataset.url);
+      });
+      if (batchUrl) {
+        const full = location.origin + batchUrl;
+        const brow = document.createElement('div');
+        brow.className = 'row batch';
+        brow.innerHTML =
+          '<div class="name">📦 these ' + uploaded.length + ' files together</div>' +
+          '<a href="' + full + '" target="_blank">open</a>' +
+          '<button class="secondary copy-btn" data-url="' + full + '">Copy</button>';
+        brow.querySelector('.copy-btn').onclick = (e) => copyToClipboard(e.target, e.target.dataset.url);
+        list.prepend(brow);
+      }
+    })
+    .catch((err) => {
+      rows.forEach((row) => {
+        row.className = 'row error';
+        row.innerHTML = row.innerHTML.replace(/<div class="status">.*<\\/div>/, '<div class="status">' + err.message + '</div>');
+      });
+    });
+}
+</script>
+</body>
+</html>`;
+
+function batchPage(id, manifest) {
+  const items = manifest
+    .map((m) => {
+      const url = '/f/' + id + '/' + encodeURIComponent(m.name);
+      const preview = m.type.startsWith('image/') ? '<img class="preview" src="' + url + '">' : '';
+      return (
+        '<div class="row" style="flex-direction:column;align-items:stretch;">' +
+        preview +
+        '<div style="display:flex;align-items:center;gap:10px;">' +
+        '<div class="name">' + m.name + '</div>' +
+        '<a href="' + url + '" target="_blank">open</a>' +
+        '</div></div>'
+      );
+    })
+    .join('\n');
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quickshare — ${manifest.length} files</title>
+<style>${STYLE}</style>
+</head>
+<body>
+  <h1>${manifest.length} shared files</h1>
+  <p class="sub">Uploaded together via quickshare.</p>
+  <div id="list">${items}</div>
+</body>
+</html>`;
+}
+
+const ADMIN_PAGE = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quickshare admin</title>
+<style>${STYLE}</style>
+</head>
+<body>
+  <h1>quickshare admin</h1>
+  <p class="sub">All uploaded files.</p>
+
+  <div id="banner"></div>
+
+  ${AUTH_BLOCK_HTML}
+
+  <div id="toolbar">
+    <label><input type="checkbox" id="selectAll"> Select all</label>
+    <button id="bulkDelete" class="secondary" style="display:none;">Delete selected</button>
+    <button id="refresh" class="secondary">Refresh</button>
+  </div>
+
+  <div id="groups"></div>
+
+  <a href="/" class="fab" title="Upload files">+</a>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const banner = $('banner'), groupsEl = $('groups'), bulkBtn = $('bulkDelete'), selectAllBox = $('selectAll');
+
+function showBanner(msg, isError) {
+  banner.textContent = msg;
+  banner.className = isError ? 'error' : '';
+  banner.style.display = msg ? 'block' : 'none';
+}
+
+${AUTH_JS}
+
+let allFiles = [];
+let batchIds = [];
+let pendingByKey = {};
+const selected = new Set();
+
+function fmtSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+}
+function fmtDate(iso) {
+  return new Date(iso).toLocaleString();
+}
+function fmtExpiry(deleteAt) {
+  const ms = deleteAt - Date.now();
+  if (ms <= 0) return 'expiring now';
+  const days = Math.floor(ms / 86400000);
+  const hours = Math.floor((ms % 86400000) / 3600000);
+  if (days > 0) return 'expires in ' + days + 'd ' + hours + 'h';
+  const mins = Math.floor((ms % 3600000) / 60000);
+  return 'expires in ' + hours + 'h ' + mins + 'm';
+}
+
+function load() {
+  groupsEl.innerHTML = '';
+  showBanner('', false);
+  fetch('/admin/list', { headers: authHeaders() })
+    .then(async (r) => {
+      if (r.status === 401) { showAuth(true); throw new Error('Wrong password'); }
+      if (!r.ok) throw new Error('Failed to load');
+      return r.json();
+    })
+    .then(({ files, batchIds: bids, pending }) => {
+      allFiles = files;
+      batchIds = bids;
+      pendingByKey = {};
+      (pending || []).forEach((p) => { pendingByKey[p.key] = p.deleteAt; });
+      selected.clear();
+      render();
+    })
+    .catch((err) => showBanner(err.message, true));
+}
+
+function render() {
+  updateBulkButton();
+  if (!allFiles.length) { groupsEl.innerHTML = '<p class="sub">No files yet.</p>'; return; }
+
+  const byId = {};
+  allFiles.forEach((f) => { (byId[f.id] = byId[f.id] || []).push(f); });
+
+  const ids = Object.keys(byId).sort((a, b) => {
+    const da = Math.max(...byId[a].map((f) => new Date(f.uploaded).getTime()));
+    const db = Math.max(...byId[b].map((f) => new Date(f.uploaded).getTime()));
+    return db - da;
+  });
+
+  groupsEl.innerHTML = ids.map((id) => {
+    const files = byId[id];
+    const isBatch = batchIds.includes(id);
+    const head = isBatch
+      ? '<div class="group-head"><span>📦 batch of ' + files.length + '</span>' +
+        '<a href="/b/' + id + '" target="_blank">open batch</a>' +
+        '<button class="secondary small copy-batch" data-url="' + location.origin + '/b/' + id + '">Copy batch link</button></div>'
+      : '<div class="group-head"><span>single file</span></div>';
+
+    const rows = files.map((f) => {
+      const full = location.origin + f.url;
+      const expiry = pendingByKey[f.key]
+        ? '<span class="meta expiring">⏳ ' + fmtExpiry(pendingByKey[f.key]) + '</span>'
+        : '';
+      return (
+        '<div class="file-row">' +
+        '<div class="file-row-top">' +
+        '<input type="checkbox" class="file-check" data-key="' + f.key + '">' +
+        '<div class="name">' + f.name + '</div>' +
+        '</div>' +
+        '<div class="file-row-actions">' +
+        expiry +
+        '<div class="meta">' + fmtSize(f.size) + ' · ' + fmtDate(f.uploaded) + '</div>' +
+        '<a href="' + full + '" target="_blank">open</a>' +
+        '<button class="secondary small copy-file" data-url="' + full + '">Copy</button>' +
+        '<button class="secondary small regen" data-key="' + f.key + '">Regenerate</button>' +
+        '<button class="secondary small del" data-key="' + f.key + '">Delete</button>' +
+        '</div>' +
+        '</div>'
+      );
+    }).join('');
+
+    return '<div class="group">' + head + rows + '</div>';
+  }).join('');
+
+  groupsEl.querySelectorAll('.file-check').forEach((cb) => {
+    cb.checked = selected.has(cb.dataset.key);
+    cb.onchange = () => {
+      if (cb.checked) selected.add(cb.dataset.key); else selected.delete(cb.dataset.key);
+      updateBulkButton();
+    };
+  });
+  groupsEl.querySelectorAll('.copy-batch, .copy-file').forEach((btn) => {
+    btn.onclick = (e) => copyToClipboard(e.target, e.target.dataset.url);
+  });
+  groupsEl.querySelectorAll('.del').forEach((btn) => {
+    btn.onclick = (e) => deleteKeys([e.target.dataset.key]);
+  });
+  groupsEl.querySelectorAll('.regen').forEach((btn) => {
+    btn.onclick = (e) => regenerate(e.target.dataset.key, e.target);
+  });
+}
+
+function updateBulkButton() {
+  bulkBtn.style.display = selected.size ? 'inline-block' : 'none';
+  bulkBtn.textContent = 'Delete selected (' + selected.size + ')';
+  selectAllBox.checked = allFiles.length > 0 && selected.size === allFiles.length;
+}
+
+selectAllBox.onchange = () => {
+  if (selectAllBox.checked) allFiles.forEach((f) => selected.add(f.key));
+  else selected.clear();
+  render();
+};
+
+bulkBtn.onclick = () => {
+  if (!confirm('Delete ' + selected.size + ' file(s)? This cannot be undone.')) return;
+  deleteKeys([...selected]);
+};
+
+$('refresh').onclick = load;
+
+function deleteKeys(keys) {
+  fetch('/admin/delete', {
+    method: 'POST',
+    headers: Object.assign({ 'content-type': 'application/json' }, authHeaders()),
+    body: JSON.stringify({ keys }),
+  })
+    .then((r) => { if (!r.ok) throw new Error('Delete failed'); })
+    .then(() => { keys.forEach((k) => selected.delete(k)); load(); })
+    .catch((err) => showBanner(err.message, true));
+}
+
+function regenerate(key, btn) {
+  const orig = btn.textContent;
+  btn.disabled = true;
+  fetch('/admin/regenerate', {
+    method: 'POST',
+    headers: Object.assign({ 'content-type': 'application/json' }, authHeaders()),
+    body: JSON.stringify({ key }),
+  })
+    .then(async (r) => {
+      if (!r.ok) throw new Error('Regenerate failed');
+      return r.json();
+    })
+    .then(({ url }) => {
+      const full = location.origin + url;
+      navigator.clipboard.writeText(full);
+      btn.textContent = 'Generated!';
+      showBanner('New link copied: ' + full + ' — old link stays live for 7 more days.', false);
+      setTimeout(load, 1200);
+    })
+    .catch((err) => {
+      btn.disabled = false;
+      btn.textContent = orig;
+      showBanner(err.message, true);
+    });
+}
+
+load();
+</script>
+</body>
+</html>`;
+
+function randomId() {
+  const bytes = crypto.getRandomValues(new Uint8Array(6));
+  return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function sanitizeFilename(name) {
+  return name.replace(/[\/\\]/g, '_').slice(-150) || 'file';
+}
+
+function dedupeFilename(used, filename) {
+  let name = filename;
+  let i = 2;
+  while (used.has(name)) {
+    const dot = filename.lastIndexOf('.');
+    name = dot > 0 ? filename.slice(0, dot) + ' (' + i + ')' + filename.slice(dot) : filename + ' (' + i + ')';
+    i++;
+  }
+  used.add(name);
+  return name;
+}
+
+function checkToken(request, env) {
+  const token = request.headers.get('x-upload-token') || '';
+  return !!env.UPLOAD_TOKEN && token === env.UPLOAD_TOKEN;
+}
+
+async function listAllObjects(bucket) {
+  let cursor;
+  const objects = [];
+  do {
+    const res = await bucket.list({ cursor, limit: 1000, include: ['httpMetadata'] });
+    objects.push(...res.objects);
+    cursor = res.truncated ? res.cursor : undefined;
+  } while (cursor);
+  return objects;
+}
+
+const GRACE_MS = 7 * 24 * 60 * 60 * 1000;
+const PENDING_KEY = '_system/pending-deletes.json';
+
+async function getPendingDeletes(bucket) {
+  const obj = await bucket.get(PENDING_KEY);
+  if (!obj) return [];
+  try {
+    return JSON.parse(await obj.text());
+  } catch {
+    return [];
+  }
+}
+
+async function putPendingDeletes(bucket, list) {
+  if (!list.length) {
+    await bucket.delete(PENDING_KEY);
+    return;
+  }
+  await bucket.put(PENDING_KEY, JSON.stringify(list), {
+    httpMetadata: { contentType: 'application/json' },
+  });
+}
+
+async function runCleanup(env) {
+  const pending = await getPendingDeletes(env.SHARE_R2);
+  const now = Date.now();
+  const due = pending.filter((p) => p.deleteAt <= now);
+  const remaining = pending.filter((p) => p.deleteAt > now);
+  if (due.length) {
+    const dueKeys = due.map((p) => p.key);
+    await env.SHARE_R2.delete(dueKeys);
+    await cleanupManifests(env.SHARE_R2, dueKeys);
+  }
+  await putPendingDeletes(env.SHARE_R2, remaining);
+}
+
+async function cleanupManifests(bucket, deletedKeys) {
+  const ids = new Set();
+  for (const key of deletedKeys) {
+    if (key.endsWith('/_manifest.json')) continue;
+    const slash = key.indexOf('/');
+    if (slash > 0) ids.add(key.slice(0, slash));
+  }
+  for (const id of ids) {
+    const manifestKey = id + '/_manifest.json';
+    const obj = await bucket.get(manifestKey);
+    if (!obj) continue;
+    const manifest = JSON.parse(await obj.text());
+    const remaining = manifest.filter((m) => !deletedKeys.includes(id + '/' + m.name));
+    if (remaining.length <= 1) {
+      await bucket.delete(manifestKey);
+    } else if (remaining.length !== manifest.length) {
+      await bucket.put(manifestKey, JSON.stringify(remaining), {
+        httpMetadata: { contentType: 'application/json' },
+      });
+    }
+  }
+}
+
+export default {
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    const { pathname } = url;
+
+    if (request.method === 'GET' && pathname === '/') {
+      return new Response(PAGE, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+    }
+
+    if (request.method === 'POST' && pathname === '/upload') {
+      if (!checkToken(request, env)) {
+        return Response.json({ error: 'unauthorized' }, { status: 401 });
+      }
+
+      const form = await request.formData();
+      const incoming = form.getAll('file').filter((f) => typeof f !== 'string');
+      if (!incoming.length) {
+        return Response.json({ error: 'no file' }, { status: 400 });
+      }
+
+      const id = randomId();
+      const used = new Set(['_manifest.json']);
+      const manifest = [];
+
+      for (const file of incoming) {
+        const name = dedupeFilename(used, sanitizeFilename(file.name || 'file'));
+        const type = file.type || 'application/octet-stream';
+        await env.SHARE_R2.put(id + '/' + name, file.stream(), {
+          httpMetadata: { contentType: type },
+        });
+        manifest.push({ name, type, size: file.size });
+      }
+
+      if (manifest.length > 1) {
+        await env.SHARE_R2.put(id + '/_manifest.json', JSON.stringify(manifest), {
+          httpMetadata: { contentType: 'application/json' },
+        });
+      }
+
+      return Response.json({
+        files: manifest.map((m) => ({ name: m.name, url: '/f/' + id + '/' + m.name })),
+        batchUrl: manifest.length > 1 ? '/b/' + id : null,
+      });
+    }
+
+    if (request.method === 'GET' && pathname === '/admin') {
+      return new Response(ADMIN_PAGE, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+    }
+
+    if (request.method === 'GET' && pathname === '/admin/list') {
+      if (!checkToken(request, env)) {
+        return Response.json({ error: 'unauthorized' }, { status: 401 });
+      }
+      ctx.waitUntil(runCleanup(env));
+      const objects = await listAllObjects(env.SHARE_R2);
+      const files = objects
+        .filter((o) => !o.key.endsWith('/_manifest.json') && !o.key.startsWith('_system/'))
+        .map((o) => {
+          const slash = o.key.indexOf('/');
+          return {
+            key: o.key,
+            id: o.key.slice(0, slash),
+            name: o.key.slice(slash + 1),
+            size: o.size,
+            uploaded: o.uploaded,
+            contentType: o.httpMetadata && o.httpMetadata.contentType,
+            url: '/f/' + o.key,
+          };
+        });
+      const batchIds = objects
+        .filter((o) => o.key.endsWith('/_manifest.json'))
+        .map((o) => o.key.slice(0, o.key.indexOf('/')));
+      const pending = await getPendingDeletes(env.SHARE_R2);
+      return Response.json({ files, batchIds, pending });
+    }
+
+    if (request.method === 'POST' && pathname === '/admin/delete') {
+      if (!checkToken(request, env)) {
+        return Response.json({ error: 'unauthorized' }, { status: 401 });
+      }
+      const { keys } = await request.json();
+      if (!Array.isArray(keys) || !keys.length) {
+        return Response.json({ error: 'no keys' }, { status: 400 });
+      }
+      await env.SHARE_R2.delete(keys);
+      await cleanupManifests(env.SHARE_R2, keys);
+      return Response.json({ ok: true });
+    }
+
+    if (request.method === 'POST' && pathname === '/admin/regenerate') {
+      if (!checkToken(request, env)) {
+        return Response.json({ error: 'unauthorized' }, { status: 401 });
+      }
+      const { key } = await request.json();
+      if (!key) return Response.json({ error: 'no key' }, { status: 400 });
+
+      const object = await env.SHARE_R2.get(key);
+      if (!object) return Response.json({ error: 'not found' }, { status: 404 });
+
+      const slash = key.indexOf('/');
+      const name = key.slice(slash + 1);
+      const newId = randomId();
+      const newKey = newId + '/' + name;
+
+      await env.SHARE_R2.put(newKey, object.body, { httpMetadata: object.httpMetadata });
+
+      const pending = await getPendingDeletes(env.SHARE_R2);
+      pending.push({ key, deleteAt: Date.now() + GRACE_MS });
+      await putPendingDeletes(env.SHARE_R2, pending);
+
+      return Response.json({ url: '/f/' + newKey, oldExpiresAt: Date.now() + GRACE_MS });
+    }
+
+    if (request.method === 'GET' && pathname.startsWith('/b/')) {
+      const id = pathname.slice(3).replace(/\/$/, '');
+      const manifestObj = await env.SHARE_R2.get(id + '/_manifest.json');
+      if (!manifestObj) return new Response('Not found', { status: 404 });
+      const manifest = JSON.parse(await manifestObj.text());
+      return new Response(batchPage(id, manifest), {
+        headers: { 'content-type': 'text/html; charset=utf-8' },
+      });
+    }
+
+    if (request.method === 'GET' && pathname.startsWith('/f/')) {
+      const key = decodeURIComponent(pathname.slice(3));
+      if (key.endsWith('/_manifest.json') || key.startsWith('_system/')) {
+        return new Response('Not found', { status: 404 });
+      }
+
+      const pending = await getPendingDeletes(env.SHARE_R2);
+      const entry = pending.find((p) => p.key === key);
+      if (entry && entry.deleteAt <= Date.now()) {
+        return new Response('Not found', { status: 404 });
+      }
+
+      const object = await env.SHARE_R2.get(key);
+      if (!object) return new Response('Not found', { status: 404 });
+
+      const headers = new Headers();
+      object.writeHttpMetadata(headers);
+      headers.set('cache-control', entry ? 'private, no-store' : 'public, max-age=31536000, immutable');
+      headers.set('etag', object.httpEtag);
+      return new Response(object.body, { headers });
+    }
+
+    return new Response('Not found', { status: 404 });
+  },
+};

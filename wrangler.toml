@@ -1,0 +1,11 @@
+name = "quickshare"
+main = "src/index.js"
+compatibility_date = "2026-07-28"
+
+routes = [
+  { pattern = "share.1000600.xyz", custom_domain = true }
+]
+
+[[r2_buckets]]
+binding = "SHARE_R2"
+bucket_name = "quickshare-files"
