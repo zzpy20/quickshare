@@ -324,7 +324,21 @@ async function makeThumbnail(file) {
   }
 }
 
-async function handleFiles(files) {
+function uploadThumbnailsInBackground(uploaded, originals) {
+  uploaded.forEach((u, i) => {
+    const original = originals[i];
+    if (!original || !original.type.startsWith('image/')) return;
+    makeThumbnail(original).then((blob) => {
+      if (!blob) return;
+      const tfd = new FormData();
+      tfd.append('key', u.key);
+      tfd.append('thumb', blob, original.name);
+      return fetch('/admin/set-thumbnail', { method: 'POST', headers: authHeaders(), body: tfd });
+    }).catch(() => {});
+  });
+}
+
+function handleFiles(files) {
   showBanner('', false);
   const arr = [...files];
   if (!arr.length) return;
@@ -337,13 +351,8 @@ async function handleFiles(files) {
     return row;
   });
 
-  const thumbs = await Promise.all(arr.map(makeThumbnail));
-
   const fd = new FormData();
-  arr.forEach((f, i) => {
-    fd.append('file', f, f.name);
-    if (thumbs[i]) fd.append('thumb_' + i, thumbs[i], f.name);
-  });
+  arr.forEach((f) => fd.append('file', f, f.name));
   fd.append('tags', tagsInput.value);
   fd.append('caption', captionInput.value);
 
@@ -381,6 +390,7 @@ async function handleFiles(files) {
       }
       tagsInput.value = '';
       captionInput.value = '';
+      uploadThumbnailsInBackground(uploaded, arr);
     })
     .catch((err) => {
       rows.forEach((row) => {
@@ -1428,9 +1438,29 @@ export default {
       }
 
       return Response.json({
-        files: manifest.map((m) => ({ name: m.name, url: '/f/' + id + '/' + encodeURIComponent(m.name) })),
+        files: manifest.map((m) => ({
+          name: m.name,
+          key: id + '/' + m.name,
+          url: '/f/' + id + '/' + encodeURIComponent(m.name),
+        })),
         batchUrl: manifest.length > 1 ? '/b/' + id : null,
       });
+    }
+
+    if (request.method === 'POST' && pathname === '/admin/set-thumbnail') {
+      if (!checkToken(request, env)) {
+        return Response.json({ error: 'unauthorized' }, { status: 401 });
+      }
+      const form = await request.formData();
+      const key = form.get('key');
+      const thumb = form.get('thumb');
+      if (!key || typeof key !== 'string' || !thumb || typeof thumb === 'string') {
+        return Response.json({ error: 'missing key or thumb' }, { status: 400 });
+      }
+      await env.SHARE_R2.put(thumbKeyFor(key), thumb.stream(), {
+        httpMetadata: { contentType: 'image/jpeg' },
+      });
+      return Response.json({ ok: true });
     }
 
     if (request.method === 'GET' && pathname === '/admin') {
