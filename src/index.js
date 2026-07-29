@@ -600,9 +600,23 @@ function load() {
     .catch((err) => showBanner(err.message, true));
 }
 
+function fileMatchesFilters(f) {
+  const matchesSearch = !searchTerm ||
+    f.name.toLowerCase().includes(searchTerm) ||
+    (f.caption && f.caption.toLowerCase().includes(searchTerm));
+  const matchesTag = !activeTag || (f.tags || []).includes(activeTag);
+  return matchesSearch && matchesTag;
+}
+
 function computeView() {
   const byId = {};
   allFiles.forEach((f) => { (byId[f.id] = byId[f.id] || []).push(f); });
+
+  const hasFilter = !!searchTerm || !!activeTag;
+  const displayById = {};
+  Object.keys(byId).forEach((id) => {
+    displayById[id] = hasFilter ? byId[id].filter(fileMatchesFilters) : byId[id];
+  });
 
   let ids = Object.keys(byId).sort((a, b) => {
     const da = Math.max(...byId[a].map((f) => new Date(f.uploaded).getTime()));
@@ -610,15 +624,8 @@ function computeView() {
     return db - da;
   });
 
-  if (searchTerm) {
-    ids = ids.filter((id) => byId[id].some((f) =>
-      f.name.toLowerCase().includes(searchTerm) ||
-      (f.caption && f.caption.toLowerCase().includes(searchTerm))
-    ));
-  }
-
-  if (activeTag) {
-    ids = ids.filter((id) => byId[id].some((f) => (f.tags || []).includes(activeTag)));
+  if (hasFilter) {
+    ids = ids.filter((id) => displayById[id].length > 0);
   }
 
   const totalGroups = ids.length;
@@ -626,11 +633,11 @@ function computeView() {
   currentPage = Math.min(Math.max(currentPage, 1), totalPages);
 
   const pageIds = ids.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
-  const visibleFiles = pageIds.flatMap((id) => byId[id]);
-  const allFilteredFiles = ids.flatMap((id) => byId[id]);
-  const totalFileCount = ids.reduce((sum, id) => sum + byId[id].length, 0);
+  const visibleFiles = pageIds.flatMap((id) => displayById[id]);
+  const allFilteredFiles = ids.flatMap((id) => displayById[id]);
+  const totalFileCount = ids.reduce((sum, id) => sum + displayById[id].length, 0);
 
-  return { byId, pageIds, visibleFiles, allFilteredFiles, totalGroups, totalPages, totalFileCount };
+  return { byId, displayById, pageIds, visibleFiles, allFilteredFiles, totalGroups, totalPages, totalFileCount };
 }
 
 function render() {
@@ -644,7 +651,7 @@ function render() {
     return;
   }
 
-  const { byId, pageIds, visibleFiles, totalGroups, totalPages, totalFileCount } = computeView();
+  const { byId, displayById, pageIds, visibleFiles, totalGroups, totalPages, totalFileCount } = computeView();
 
   const filterLabel = [
     searchTerm ? '"' + searchBox.value.trim() + '"' : null,
@@ -662,10 +669,12 @@ function render() {
   }
 
   groupsEl.innerHTML = pageIds.map((id) => {
-    const files = byId[id];
+    const files = displayById[id];
+    const fullCount = byId[id].length;
+    const shownHint = files.length !== fullCount ? ' · ' + files.length + ' shown' : '';
     const isBatch = batchIds.includes(id);
     const head = isBatch
-      ? '<div class="group-head"><span>📦 batch of ' + files.length + '</span>' +
+      ? '<div class="group-head"><span>📦 batch of ' + fullCount + shownHint + '</span>' +
         '<a href="/b/' + id + '" target="_blank">open batch</a>' +
         '<button class="secondary small copy-batch" data-url="' + location.origin + '/b/' + id + '">Copy batch link</button></div>'
       : '<div class="group-head"><span>single file</span></div>';
