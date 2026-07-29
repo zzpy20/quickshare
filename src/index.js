@@ -548,8 +548,8 @@ function render() {
         addTagSlot +
         '<div class="meta">' + fmtSize(f.size) + ' · ' + fmtDate(f.uploaded) + '</div>' +
         '<a href="' + escapeHtml(full) + '" target="_blank">open</a>' +
-        '<button class="secondary small copy-file" data-url="' + escapeHtml(full) + '">Copy</button>' +
-        '<button class="secondary small regen" data-key="' + key + '">Regenerate</button>' +
+        '<button class="secondary small copy-file" data-url="' + escapeHtml(full) + '">Copy links</button>' +
+        '<button class="secondary small regen" data-key="' + key + '">Regenerate links</button>' +
         '<button class="secondary small del" data-key="' + key + '">Delete</button>' +
         '</div>' +
         '</div>'
