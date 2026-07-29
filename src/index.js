@@ -16,18 +16,29 @@ const STYLE = `
   @media (prefers-color-scheme: dark) {
     body { background: #1c1c1e; color: #f5f5f7; }
     #drop { border-color: #48484a !important; background: #2c2c2e !important; }
-    input[type=password], input[type=search] { background: #2c2c2e; color: #f5f5f7; border-color: #48484a; }
+    input[type=password], input[type=search], input.meta-input { background: #2c2c2e; color: #f5f5f7; border-color: #48484a; }
     .row { background: #2c2c2e !important; }
     .row.batch { background: #1c2e42 !important; }
+    .field-label { color: #f5f5f7; }
+    .tag-chip, .file-tag { background: #2c2c2e !important; color: #f5f5f7 !important; }
   }
   h1 { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
   p.sub { color: #86868b; margin-top: 0; font-size: 14px; }
   #auth { display: flex; gap: 8px; margin: 20px 0; }
-  input[type=password], input[type=search] {
+  input[type=password], input[type=search], input.meta-input {
     flex: 1; padding: 10px 12px; border-radius: 10px; border: 1px solid #d2d2d7;
     font-size: 14px; width: 100%;
   }
   #searchBox { margin: 20px 0 0; }
+  .field-label { display: block; font-size: 13px; font-weight: 500; margin: 16px 0 6px; }
+  #tagFilters { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 0; }
+  .tag-chip {
+    padding: 4px 12px; border-radius: 999px; background: #e8e8ed; color: #1d1d1f;
+    font-size: 12px; cursor: pointer; border: none; font-weight: 500;
+  }
+  .tag-chip.active { background: #0071e3; color: #fff; }
+  .file-tag { padding: 2px 9px; border-radius: 999px; background: #e8e8ed; font-size: 11px; flex-shrink: 0; }
+  .file-row .caption { font-style: italic; width: 100%; }
   button {
     padding: 10px 16px; border-radius: 10px; border: none; background: #0071e3;
     color: #fff; font-size: 14px; font-weight: 500; cursor: pointer;
@@ -142,7 +153,13 @@ const PAGE = `<!doctype html>
 
   ${AUTH_BLOCK_HTML}
 
-  <div id="drop">Drop files here, or click to choose</div>
+  <label class="field-label" for="tagsInput">Tags (comma separated)</label>
+  <input type="text" id="tagsInput" class="meta-input" placeholder="e.g. tech, read-later">
+
+  <label class="field-label" for="captionInput">Caption (optional)</label>
+  <input type="text" id="captionInput" class="meta-input" placeholder="Add a note…">
+
+  <div id="drop" style="margin-top:20px;">Drop files here, or click to choose</div>
   <input type="file" id="fileInput" multiple>
 
   <div id="list"></div>
@@ -152,6 +169,7 @@ const PAGE = `<!doctype html>
 <script>
 const $ = (id) => document.getElementById(id);
 const drop = $('drop'), fileInput = $('fileInput'), list = $('list'), banner = $('banner');
+const tagsInput = $('tagsInput'), captionInput = $('captionInput');
 
 function showBanner(msg, isError) {
   banner.textContent = msg;
@@ -186,6 +204,8 @@ function handleFiles(files) {
 
   const fd = new FormData();
   arr.forEach((f) => fd.append('file', f, f.name));
+  fd.append('tags', tagsInput.value);
+  fd.append('caption', captionInput.value);
 
   fetch('/upload', {
     method: 'POST',
@@ -219,6 +239,8 @@ function handleFiles(files) {
         brow.querySelector('.copy-btn').onclick = (e) => copyToClipboard(e.target, e.target.dataset.url);
         list.prepend(brow);
       }
+      tagsInput.value = '';
+      captionInput.value = '';
     })
     .catch((err) => {
       rows.forEach((row) => {
@@ -285,7 +307,9 @@ const ADMIN_PAGE = `<!doctype html>
 
   ${AUTH_BLOCK_HTML}
 
-  <input type="search" id="searchBox" placeholder="Search filenames…">
+  <input type="search" id="searchBox" placeholder="Search filenames and captions…">
+
+  <div id="tagFilters"></div>
 
   <div id="toolbar">
     <label><input type="checkbox" id="selectAll"> Select all on page</label>
@@ -307,6 +331,7 @@ const ADMIN_PAGE = `<!doctype html>
 const $ = (id) => document.getElementById(id);
 const banner = $('banner'), groupsEl = $('groups'), bulkBtn = $('bulkDelete'), selectAllBox = $('selectAll');
 const searchBox = $('searchBox'), paginationEl = $('pagination'), resultsSummary = $('resultsSummary');
+const tagFiltersEl = $('tagFilters');
 const lightbox = $('lightbox'), lightboxImg = $('lightboxImg');
 
 function openLightbox(url) {
@@ -330,9 +355,29 @@ let allFiles = [];
 let batchIds = [];
 let pendingByKey = {};
 let searchTerm = '';
+let activeTag = null;
 let currentPage = 1;
 const PAGE_SIZE = 20;
 const selected = new Set();
+
+function renderTagFilters() {
+  const tagSet = new Set();
+  allFiles.forEach((f) => (f.tags || []).forEach((t) => tagSet.add(t)));
+  const tags = [...tagSet].sort();
+  if (!tags.length) { tagFiltersEl.innerHTML = ''; return; }
+  tagFiltersEl.innerHTML = tags.map((t) =>
+    '<button type="button" class="tag-chip' + (activeTag === t ? ' active' : '') + '" data-tag="' + escapeHtml(t) + '">' + escapeHtml(t) + '</button>'
+  ).join('') + (activeTag ? '<button type="button" class="tag-chip" id="clearTag">✕ clear</button>' : '');
+  tagFiltersEl.querySelectorAll('.tag-chip[data-tag]').forEach((btn) => {
+    btn.onclick = () => {
+      activeTag = activeTag === btn.dataset.tag ? null : btn.dataset.tag;
+      currentPage = 1;
+      render();
+    };
+  });
+  const clearBtn = $('clearTag');
+  if (clearBtn) clearBtn.onclick = () => { activeTag = null; currentPage = 1; render(); };
+}
 
 function fmtSize(bytes) {
   if (bytes < 1024) return bytes + ' B';
@@ -383,7 +428,14 @@ function computeView() {
   });
 
   if (searchTerm) {
-    ids = ids.filter((id) => byId[id].some((f) => f.name.toLowerCase().includes(searchTerm)));
+    ids = ids.filter((id) => byId[id].some((f) =>
+      f.name.toLowerCase().includes(searchTerm) ||
+      (f.caption && f.caption.toLowerCase().includes(searchTerm))
+    ));
+  }
+
+  if (activeTag) {
+    ids = ids.filter((id) => byId[id].some((f) => (f.tags || []).includes(activeTag)));
   }
 
   const totalGroups = ids.length;
@@ -398,6 +450,8 @@ function computeView() {
 }
 
 function render() {
+  renderTagFilters();
+
   if (!allFiles.length) {
     groupsEl.innerHTML = '<p class="sub">No files yet.</p>';
     paginationEl.innerHTML = '';
@@ -408,8 +462,12 @@ function render() {
 
   const { byId, pageIds, visibleFiles, totalGroups, totalPages, totalFileCount } = computeView();
 
-  resultsSummary.textContent = searchTerm
-    ? totalFileCount + ' file(s) match "' + searchBox.value.trim() + '"'
+  const filterLabel = [
+    searchTerm ? '"' + searchBox.value.trim() + '"' : null,
+    activeTag ? 'tag "' + activeTag + '"' : null,
+  ].filter(Boolean).join(' + ');
+  resultsSummary.textContent = filterLabel
+    ? totalFileCount + ' file(s) match ' + filterLabel
     : allFiles.length + ' file(s) total';
 
   if (!totalGroups) {
@@ -437,6 +495,8 @@ function render() {
       const thumb = f.contentType && f.contentType.startsWith('image/')
         ? '<img class="thumb" loading="lazy" src="' + escapeHtml(full) + '" data-full="' + escapeHtml(full) + '">'
         : '';
+      const caption = f.caption ? '<div class="meta caption">📝 ' + escapeHtml(f.caption) + '</div>' : '';
+      const tagPills = (f.tags || []).map((t) => '<span class="file-tag">' + escapeHtml(t) + '</span>').join('');
       return (
         '<div class="file-row">' +
         '<div class="file-row-top">' +
@@ -445,7 +505,9 @@ function render() {
         '<div class="name">' + escapeHtml(f.name) + '</div>' +
         '</div>' +
         '<div class="file-row-actions">' +
+        caption +
         expiry +
+        tagPills +
         '<div class="meta">' + fmtSize(f.size) + ' · ' + fmtDate(f.uploaded) + '</div>' +
         '<a href="' + escapeHtml(full) + '" target="_blank">open</a>' +
         '<button class="secondary small copy-file" data-url="' + escapeHtml(full) + '">Copy</button>' +
@@ -591,7 +653,7 @@ async function listAllObjects(bucket) {
   let cursor;
   const objects = [];
   do {
-    const res = await bucket.list({ cursor, limit: 1000, include: ['httpMetadata'] });
+    const res = await bucket.list({ cursor, limit: 1000, include: ['httpMetadata', 'customMetadata'] });
     objects.push(...res.objects);
     cursor = res.truncated ? res.cursor : undefined;
   } while (cursor);
@@ -677,6 +739,16 @@ export default {
         return Response.json({ error: 'no file' }, { status: 400 });
       }
 
+      const tagsRaw = form.get('tags');
+      const captionRaw = form.get('caption');
+      const tags = typeof tagsRaw === 'string'
+        ? [...new Set(tagsRaw.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean))]
+        : [];
+      const caption = typeof captionRaw === 'string' ? captionRaw.trim().slice(0, 500) : '';
+      const customMetadata = {};
+      if (tags.length) customMetadata.tags = tags.join(',');
+      if (caption) customMetadata.caption = caption;
+
       const id = randomId();
       const used = new Set(['_manifest.json']);
       const manifest = [];
@@ -686,6 +758,7 @@ export default {
         const type = file.type || 'application/octet-stream';
         await env.SHARE_R2.put(id + '/' + name, file.stream(), {
           httpMetadata: { contentType: type },
+          customMetadata: Object.keys(customMetadata).length ? customMetadata : undefined,
         });
         manifest.push({ name, type, size: file.size });
       }
@@ -718,6 +791,7 @@ export default {
           const slash = o.key.indexOf('/');
           const id = o.key.slice(0, slash);
           const name = o.key.slice(slash + 1);
+          const cm = o.customMetadata || {};
           return {
             key: o.key,
             id,
@@ -726,6 +800,8 @@ export default {
             uploaded: o.uploaded,
             contentType: o.httpMetadata && o.httpMetadata.contentType,
             url: '/f/' + id + '/' + encodeURIComponent(name),
+            tags: cm.tags ? cm.tags.split(',').filter(Boolean) : [],
+            caption: cm.caption || '',
           };
         });
       const batchIds = objects
@@ -763,7 +839,10 @@ export default {
       const newId = randomId();
       const newKey = newId + '/' + name;
 
-      await env.SHARE_R2.put(newKey, object.body, { httpMetadata: object.httpMetadata });
+      await env.SHARE_R2.put(newKey, object.body, {
+        httpMetadata: object.httpMetadata,
+        customMetadata: object.customMetadata,
+      });
 
       const pending = await getPendingDeletes(env.SHARE_R2);
       pending.push({ key, deleteAt: Date.now() + GRACE_MS });
