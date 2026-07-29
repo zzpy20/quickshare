@@ -46,7 +46,25 @@ const STYLE = `
     font-size: 13px; line-height: 1; cursor: pointer; opacity: 0.55;
   }
   .file-tag button.tag-remove:hover { opacity: 1; background: none; }
-  .file-row .caption { font-style: italic; width: 100%; }
+  .file-row .caption { width: 100%; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .file-row .caption .caption-text { font-style: italic; }
+  button.small-icon-btn {
+    background: none; border: none; padding: 0 2px; color: inherit; font-size: 12px;
+    opacity: 0.55; cursor: pointer;
+  }
+  button.small-icon-btn:hover { opacity: 1; background: none; }
+  button.caption-add-btn {
+    background: none; border: none; padding: 0; color: #0071e3; font-size: 12px;
+    font-weight: 500; cursor: pointer;
+  }
+  button.caption-add-btn:hover { background: none; text-decoration: underline; }
+  input.caption-input {
+    flex: 1; min-width: 140px; padding: 6px 10px; border-radius: 8px;
+    border: 1px solid #d2d2d7; font-size: 12px;
+  }
+  @media (prefers-color-scheme: dark) {
+    input.caption-input { background: #2c2c2e; color: #f5f5f7; border-color: #48484a; }
+  }
   button {
     padding: 10px 16px; border-radius: 10px; border: none; background: #0071e3;
     color: #fff; font-size: 14px; font-weight: 500; cursor: pointer;
@@ -503,7 +521,11 @@ function render() {
       const thumb = f.contentType && f.contentType.startsWith('image/')
         ? '<img class="thumb" loading="lazy" src="' + escapeHtml(full) + '" data-full="' + escapeHtml(full) + '">'
         : '';
-      const caption = f.caption ? '<div class="meta caption">📝 ' + escapeHtml(f.caption) + '</div>' : '';
+      const captionInner = f.caption
+        ? '<span class="caption-text">📝 ' + escapeHtml(f.caption) + '</span>' +
+          '<button type="button" class="small-icon-btn caption-edit-btn" data-key="' + key + '" data-caption="' + escapeHtml(f.caption) + '" title="Edit caption">✎</button>'
+        : '<button type="button" class="caption-add-btn" data-key="' + key + '" data-caption="" title="Add caption">+ caption</button>';
+      const caption = '<div class="meta caption">' + captionInner + '</div>';
       const tagPills = (f.tags || []).map((t) =>
         '<span class="file-tag">' + escapeHtml(t) +
         '<button type="button" class="tag-remove" data-key="' + key + '" data-tag="' + escapeHtml(t) + '" title="Remove tag">×</button>' +
@@ -554,6 +576,12 @@ function render() {
   });
   groupsEl.querySelectorAll('.tag-remove').forEach((btn) => {
     btn.onclick = (e) => removeTag(e.target.dataset.key, e.target.dataset.tag);
+  });
+  groupsEl.querySelectorAll('.caption-edit-btn, .caption-add-btn').forEach((btn) => {
+    btn.onclick = (e) => {
+      const container = e.target.closest('.caption');
+      startCaptionEdit(container, e.target.dataset.key, e.target.dataset.caption);
+    };
   });
 
   paginationEl.innerHTML = totalPages > 1
@@ -640,6 +668,33 @@ function removeTag(key, tag) {
     body: JSON.stringify({ key, tag }),
   })
     .then((r) => { if (!r.ok) throw new Error('Failed to remove tag'); })
+    .then(load)
+    .catch((err) => showBanner(err.message, true));
+}
+
+function startCaptionEdit(container, key, currentCaption) {
+  container.innerHTML =
+    '<input type="text" class="caption-input" value="' + escapeHtml(currentCaption) + '" placeholder="Add a note…" maxlength="500">' +
+    '<button type="button" class="secondary small caption-save">Save</button>' +
+    '<button type="button" class="secondary small caption-cancel">Cancel</button>';
+  const input = container.querySelector('.caption-input');
+  input.focus();
+  input.setSelectionRange(input.value.length, input.value.length);
+  container.querySelector('.caption-save').onclick = () => saveCaption(key, input.value);
+  container.querySelector('.caption-cancel').onclick = () => load();
+  input.onkeydown = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); saveCaption(key, input.value); }
+    if (e.key === 'Escape') load();
+  };
+}
+
+function saveCaption(key, caption) {
+  fetch('/admin/set-caption', {
+    method: 'POST',
+    headers: Object.assign({ 'content-type': 'application/json' }, authHeaders()),
+    body: JSON.stringify({ key, caption }),
+  })
+    .then((r) => { if (!r.ok) throw new Error('Failed to save caption'); })
     .then(load)
     .catch((err) => showBanner(err.message, true));
 }
@@ -899,6 +954,29 @@ export default {
       });
 
       return Response.json({ ok: true, tags });
+    }
+
+    if (request.method === 'POST' && pathname === '/admin/set-caption') {
+      if (!checkToken(request, env)) {
+        return Response.json({ error: 'unauthorized' }, { status: 401 });
+      }
+      const { key, caption } = await request.json();
+      if (!key) return Response.json({ error: 'no key' }, { status: 400 });
+
+      const object = await env.SHARE_R2.get(key);
+      if (!object) return Response.json({ error: 'not found' }, { status: 404 });
+
+      const trimmed = typeof caption === 'string' ? caption.trim().slice(0, 500) : '';
+      const cm = Object.assign({}, object.customMetadata);
+      if (trimmed) cm.caption = trimmed;
+      else delete cm.caption;
+
+      await env.SHARE_R2.put(key, object.body, {
+        httpMetadata: object.httpMetadata,
+        customMetadata: cm,
+      });
+
+      return Response.json({ ok: true, caption: trimmed });
     }
 
     if (request.method === 'GET' && pathname.startsWith('/b/')) {
