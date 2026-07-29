@@ -96,6 +96,8 @@ const STYLE = `
   #toolbar { display: flex; align-items: center; gap: 10px; margin: 20px 0; }
   #toolbar label { display: flex; align-items: center; gap: 6px; font-size: 13px; }
   #bulkDelete { margin-left: auto; background: #ff3b30; }
+  button.delete-batch { background: #ff3b30; color: #fff; }
+  button.delete-batch:hover { background: #ff2d1f; }
   .group { border: 1px solid #e5e5ea; border-radius: 12px; padding: 12px; margin-bottom: 14px; overflow: hidden; }
   @media (prefers-color-scheme: dark) { .group { border-color: #38383a; } .file-row { border-top-color: #2c2c2e !important; } }
   .group-head { display: flex; align-items: center; gap: 10px; row-gap: 6px; flex-wrap: wrap; margin-bottom: 8px; font-size: 12px; color: #86868b; }
@@ -686,7 +688,8 @@ function render() {
     const head = isBatch
       ? '<div class="group-head"><span>📦 batch of ' + fullCount + shownHint + '</span>' +
         '<a href="/b/' + id + '" target="_blank">open batch</a>' +
-        '<button class="secondary small copy-batch" data-url="' + location.origin + '/b/' + id + '">Copy batch link</button></div>'
+        '<button class="secondary small copy-batch" data-url="' + location.origin + '/b/' + id + '">Copy batch link</button>' +
+        '<button class="secondary small delete-batch" data-id="' + id + '">Delete batch</button></div>'
       : '<div class="group-head"><span>single file</span></div>';
 
     const rows = files.map((f) => {
@@ -744,6 +747,14 @@ function render() {
   });
   groupsEl.querySelectorAll('.copy-batch, .copy-file').forEach((btn) => {
     btn.onclick = (e) => copyToClipboard(e.target, e.target.dataset.url);
+  });
+  groupsEl.querySelectorAll('.delete-batch').forEach((btn) => {
+    btn.onclick = (e) => {
+      const groupFiles = byId[e.target.dataset.id] || [];
+      if (!groupFiles.length) return;
+      if (!confirm('Delete all ' + groupFiles.length + ' files in this batch? This cannot be undone.')) return;
+      deleteKeys(groupFiles.map((f) => f.key));
+    };
   });
   groupsEl.querySelectorAll('.del').forEach((btn) => {
     btn.onclick = (e) => deleteKeys([e.target.dataset.key]);
