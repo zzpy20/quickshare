@@ -37,7 +37,15 @@ const STYLE = `
     font-size: 12px; cursor: pointer; border: none; font-weight: 500;
   }
   .tag-chip.active { background: #0071e3; color: #fff; }
-  .file-tag { padding: 2px 9px; border-radius: 999px; background: #e8e8ed; font-size: 11px; flex-shrink: 0; }
+  .file-tag {
+    padding: 2px 6px 2px 9px; border-radius: 999px; background: #e8e8ed; font-size: 11px;
+    flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px;
+  }
+  .file-tag button.tag-remove {
+    background: none; border: none; padding: 0; margin: 0; color: inherit;
+    font-size: 13px; line-height: 1; cursor: pointer; opacity: 0.55;
+  }
+  .file-tag button.tag-remove:hover { opacity: 1; background: none; }
   .file-row .caption { font-style: italic; width: 100%; }
   button {
     padding: 10px 16px; border-radius: 10px; border: none; background: #0071e3;
@@ -496,7 +504,11 @@ function render() {
         ? '<img class="thumb" loading="lazy" src="' + escapeHtml(full) + '" data-full="' + escapeHtml(full) + '">'
         : '';
       const caption = f.caption ? '<div class="meta caption">📝 ' + escapeHtml(f.caption) + '</div>' : '';
-      const tagPills = (f.tags || []).map((t) => '<span class="file-tag">' + escapeHtml(t) + '</span>').join('');
+      const tagPills = (f.tags || []).map((t) =>
+        '<span class="file-tag">' + escapeHtml(t) +
+        '<button type="button" class="tag-remove" data-key="' + key + '" data-tag="' + escapeHtml(t) + '" title="Remove tag">×</button>' +
+        '</span>'
+      ).join('');
       return (
         '<div class="file-row">' +
         '<div class="file-row-top">' +
@@ -539,6 +551,9 @@ function render() {
   });
   groupsEl.querySelectorAll('.thumb').forEach((img) => {
     img.onclick = (e) => openLightbox(e.target.dataset.full);
+  });
+  groupsEl.querySelectorAll('.tag-remove').forEach((btn) => {
+    btn.onclick = (e) => removeTag(e.target.dataset.key, e.target.dataset.tag);
   });
 
   paginationEl.innerHTML = totalPages > 1
@@ -616,6 +631,17 @@ function regenerate(key, btn) {
       btn.textContent = orig;
       showBanner(err.message, true);
     });
+}
+
+function removeTag(key, tag) {
+  fetch('/admin/remove-tag', {
+    method: 'POST',
+    headers: Object.assign({ 'content-type': 'application/json' }, authHeaders()),
+    body: JSON.stringify({ key, tag }),
+  })
+    .then((r) => { if (!r.ok) throw new Error('Failed to remove tag'); })
+    .then(load)
+    .catch((err) => showBanner(err.message, true));
 }
 
 load();
@@ -849,6 +875,30 @@ export default {
       await putPendingDeletes(env.SHARE_R2, pending);
 
       return Response.json({ url: '/f/' + newId + '/' + encodeURIComponent(name), oldExpiresAt: Date.now() + GRACE_MS });
+    }
+
+    if (request.method === 'POST' && pathname === '/admin/remove-tag') {
+      if (!checkToken(request, env)) {
+        return Response.json({ error: 'unauthorized' }, { status: 401 });
+      }
+      const { key, tag } = await request.json();
+      if (!key || !tag) return Response.json({ error: 'missing key or tag' }, { status: 400 });
+
+      const object = await env.SHARE_R2.get(key);
+      if (!object) return Response.json({ error: 'not found' }, { status: 404 });
+
+      const target = String(tag).trim().toLowerCase();
+      const cm = Object.assign({}, object.customMetadata);
+      const tags = cm.tags ? cm.tags.split(',').filter((t) => t && t !== target) : [];
+      if (tags.length) cm.tags = tags.join(',');
+      else delete cm.tags;
+
+      await env.SHARE_R2.put(key, object.body, {
+        httpMetadata: object.httpMetadata,
+        customMetadata: cm,
+      });
+
+      return Response.json({ ok: true, tags });
     }
 
     if (request.method === 'GET' && pathname.startsWith('/b/')) {
