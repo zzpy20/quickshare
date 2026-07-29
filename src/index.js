@@ -301,6 +301,27 @@ document.addEventListener('keydown', (e) => {
 });
 `;
 
+const THUMBNAIL_JS = `
+async function makeThumbnail(file) {
+  if (!file.type.startsWith('image/')) return null;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const maxEdge = 400;
+    const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+    if (bitmap.close) bitmap.close();
+    return await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.75));
+  } catch (e) {
+    return null;
+  }
+}
+`;
+
 const PAGE = `<!doctype html>
 <html lang="en">
 <head>
@@ -342,6 +363,7 @@ function showBanner(msg, isError) {
 }
 
 ${AUTH_JS}
+${THUMBNAIL_JS}
 
 drop.onclick = () => fileInput.click();
 drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('hover'); };
@@ -352,25 +374,6 @@ drop.ondrop = (e) => {
   handleFiles(e.dataTransfer.files);
 };
 fileInput.onchange = () => handleFiles(fileInput.files);
-
-async function makeThumbnail(file) {
-  if (!file.type.startsWith('image/')) return null;
-  try {
-    const bitmap = await createImageBitmap(file);
-    const maxEdge = 400;
-    const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
-    const w = Math.max(1, Math.round(bitmap.width * scale));
-    const h = Math.max(1, Math.round(bitmap.height * scale));
-    const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
-    if (bitmap.close) bitmap.close();
-    return await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.75));
-  } catch (e) {
-    return null;
-  }
-}
 
 function uploadThumbnailsInBackground(uploaded, originals) {
   uploaded.forEach((u, i) => {
@@ -512,6 +515,7 @@ const ADMIN_PAGE = `<!doctype html>
   <div id="toolbar">
     <label><input type="checkbox" id="selectAll"> Select all on page</label>
     <button id="bulkDelete" class="secondary" style="display:none;">Delete selected</button>
+    <button id="backfillThumbs" class="secondary" style="display:none;">Generate missing thumbnails</button>
     <button id="refresh" class="secondary">Refresh</button>
   </div>
 
@@ -552,6 +556,7 @@ function showBanner(msg, isError) {
 
 ${AUTH_JS}
 ${LIGHTBOX_JS}
+${THUMBNAIL_JS}
 
 let allFiles = [];
 let batchIds = [];
@@ -658,6 +663,7 @@ function computeView() {
 
 function render() {
   renderTagFilters();
+  updateBackfillButton();
 
   if (!allFiles.length) {
     groupsEl.innerHTML = '<p class="sub">No files yet.</p>';
@@ -829,6 +835,58 @@ searchBox.oninput = () => {
 };
 
 $('refresh').onclick = load;
+
+function missingThumbFiles() {
+  return allFiles.filter((f) => f.contentType && f.contentType.startsWith('image/') && !f.thumbUrl);
+}
+
+function updateBackfillButton() {
+  const btn = $('backfillThumbs');
+  const missing = missingThumbFiles();
+  if (missing.length) {
+    btn.style.display = 'inline-block';
+    btn.textContent = 'Generate ' + missing.length + ' missing thumbnail(s)';
+    btn.disabled = false;
+  } else {
+    btn.style.display = 'none';
+  }
+}
+
+async function backfillThumbnails() {
+  const missing = missingThumbFiles();
+  if (!missing.length) return;
+
+  const btn = $('backfillThumbs');
+  btn.disabled = true;
+  let done = 0;
+  showBanner('Generating thumbnails: 0/' + missing.length, false);
+
+  let next = 0;
+  async function worker() {
+    while (next < missing.length) {
+      const f = missing[next++];
+      try {
+        const resp = await fetch(location.origin + f.url);
+        const blob = await resp.blob();
+        const file = new File([blob], f.name, { type: f.contentType });
+        const thumb = await makeThumbnail(file);
+        if (thumb) {
+          const tfd = new FormData();
+          tfd.append('key', f.key);
+          tfd.append('thumb', thumb, f.name);
+          await fetch('/admin/set-thumbnail', { method: 'POST', headers: authHeaders(), body: tfd });
+        }
+      } catch (e) {}
+      done++;
+      showBanner('Generating thumbnails: ' + done + '/' + missing.length, false);
+    }
+  }
+  await Promise.all([worker(), worker(), worker()]);
+
+  showBanner('Generated ' + done + ' thumbnail(s).', false);
+  load();
+}
+$('backfillThumbs').onclick = backfillThumbnails;
 
 function deleteKeys(keys) {
   fetch('/admin/delete', {
