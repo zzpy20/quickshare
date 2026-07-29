@@ -112,7 +112,19 @@ const STYLE = `
     align-items: center; justify-content: center; z-index: 2000; cursor: zoom-out; padding: 24px;
   }
   #lightbox.open { display: flex; }
-  #lightbox img { max-width: 100%; max-height: 100%; border-radius: 10px; }
+  #lightboxContent {
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+    max-width: 100%; max-height: 100%; cursor: default;
+  }
+  #lightbox img { max-width: 100%; max-height: 74vh; border-radius: 10px; display: block; }
+  #lightboxInfo {
+    background: rgba(28,28,30,0.85); color: #fff; border-radius: 10px;
+    padding: 10px 16px; max-width: 90vw; text-align: center; font-size: 13px; cursor: text;
+  }
+  #lightboxName { font-weight: 600; word-break: break-all; user-select: text; }
+  #lightboxCaption { font-style: italic; opacity: 0.85; margin-top: 4px; user-select: text; }
+  #lightboxDate { opacity: 0.6; font-size: 12px; margin-top: 4px; }
+  #lightboxCopyName { margin-top: 8px; }
   .file-row-actions { display: flex; align-items: center; gap: 8px; row-gap: 6px; flex-wrap: wrap; margin-top: 6px; padding-left: 26px; }
   .file-row .meta { color: #86868b; font-size: 12px; flex-shrink: 0; }
   .file-row .meta.expiring { color: #ff9500; font-weight: 600; }
@@ -437,7 +449,17 @@ const ADMIN_PAGE = `<!doctype html>
 
   <a href="/" class="fab" title="Upload files">+</a>
 
-  <div id="lightbox"><img id="lightboxImg" alt=""></div>
+  <div id="lightbox">
+    <div id="lightboxContent">
+      <img id="lightboxImg" alt="">
+      <div id="lightboxInfo">
+        <div id="lightboxName"></div>
+        <div id="lightboxCaption" style="display:none;"></div>
+        <div id="lightboxDate"></div>
+        <button type="button" id="lightboxCopyName" class="secondary small">Copy name</button>
+      </div>
+    </div>
+  </div>
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -446,13 +468,27 @@ const searchBox = $('searchBox'), paginationEl = $('pagination'), resultsSummary
 const tagFiltersEl = $('tagFilters');
 const lightbox = $('lightbox'), lightboxImg = $('lightboxImg');
 
-function openLightbox(url) {
+function closeLightbox() {
+  lightbox.classList.remove('open');
+  lightboxImg.src = '';
+}
+function openLightbox(url, meta) {
   lightboxImg.src = url;
+  $('lightboxName').textContent = (meta && meta.name) || '';
+  const capEl = $('lightboxCaption');
+  if (meta && meta.caption) {
+    capEl.textContent = '📝 ' + meta.caption;
+    capEl.style.display = 'block';
+  } else {
+    capEl.style.display = 'none';
+  }
+  $('lightboxDate').textContent = meta && meta.uploaded ? fmtDate(meta.uploaded) : '';
   lightbox.classList.add('open');
 }
-lightbox.onclick = () => { lightbox.classList.remove('open'); lightboxImg.src = ''; };
+$('lightboxCopyName').onclick = (e) => copyToClipboard(e.target, $('lightboxName').textContent);
+lightbox.onclick = (e) => { if (e.target === lightbox) closeLightbox(); };
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { lightbox.classList.remove('open'); lightboxImg.src = ''; }
+  if (e.key === 'Escape') closeLightbox();
 });
 
 function showBanner(msg, isError) {
@@ -606,7 +642,9 @@ function render() {
         : '';
       const thumbSrc = f.thumbUrl ? location.origin + f.thumbUrl : full;
       const thumb = f.contentType && f.contentType.startsWith('image/')
-        ? '<img class="thumb" loading="lazy" src="' + escapeHtml(thumbSrc) + '" data-full="' + escapeHtml(full) + '">'
+        ? '<img class="thumb" loading="lazy" src="' + escapeHtml(thumbSrc) + '" data-full="' + escapeHtml(full) +
+          '" data-name="' + escapeHtml(f.name) + '" data-caption="' + escapeHtml(f.caption || '') +
+          '" data-uploaded="' + escapeHtml(f.uploaded) + '">'
         : '';
       const captionInner = f.caption
         ? '<span class="caption-text">📝 ' + escapeHtml(f.caption) + '</span>' +
@@ -661,7 +699,11 @@ function render() {
     btn.onclick = (e) => regenerate(e.target.dataset.key, e.target);
   });
   groupsEl.querySelectorAll('.thumb').forEach((img) => {
-    img.onclick = (e) => openLightbox(e.target.dataset.full);
+    img.onclick = (e) => openLightbox(e.target.dataset.full, {
+      name: e.target.dataset.name,
+      caption: e.target.dataset.caption,
+      uploaded: e.target.dataset.uploaded,
+    });
   });
   groupsEl.querySelectorAll('.tag-remove').forEach((btn) => {
     btn.onclick = (e) => removeTag(e.target.dataset.key, e.target.dataset.tag);
@@ -851,7 +893,17 @@ const GALLERY_PAGE = `<!doctype html>
     <div class="scrubber-track" id="scrubberTrack"></div>
   </div>
 
-  <div id="lightbox"><img id="lightboxImg" alt=""></div>
+  <div id="lightbox">
+    <div id="lightboxContent">
+      <img id="lightboxImg" alt="">
+      <div id="lightboxInfo">
+        <div id="lightboxName"></div>
+        <div id="lightboxCaption" style="display:none;"></div>
+        <div id="lightboxDate"></div>
+        <button type="button" id="lightboxCopyName" class="secondary small">Copy name</button>
+      </div>
+    </div>
+  </div>
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -859,13 +911,30 @@ const banner = $('banner'), galleryMain = $('galleryMain'), typeFiltersEl = $('t
 const scrubberTrack = $('scrubberTrack');
 const lightbox = $('lightbox'), lightboxImg = $('lightboxImg');
 
-function openLightbox(url) {
+function fmtDate(iso) {
+  return new Date(iso).toLocaleString();
+}
+function closeLightbox() {
+  lightbox.classList.remove('open');
+  lightboxImg.src = '';
+}
+function openLightbox(url, meta) {
   lightboxImg.src = url;
+  $('lightboxName').textContent = (meta && meta.name) || '';
+  const capEl = $('lightboxCaption');
+  if (meta && meta.caption) {
+    capEl.textContent = '📝 ' + meta.caption;
+    capEl.style.display = 'block';
+  } else {
+    capEl.style.display = 'none';
+  }
+  $('lightboxDate').textContent = meta && meta.uploaded ? fmtDate(meta.uploaded) : '';
   lightbox.classList.add('open');
 }
-lightbox.onclick = () => { lightbox.classList.remove('open'); lightboxImg.src = ''; };
+$('lightboxCopyName').onclick = (e) => copyToClipboard(e.target, $('lightboxName').textContent);
+lightbox.onclick = (e) => { if (e.target === lightbox) closeLightbox(); };
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { lightbox.classList.remove('open'); lightboxImg.src = ''; }
+  if (e.key === 'Escape') closeLightbox();
 });
 
 function showBanner(msg, isError) {
@@ -949,7 +1018,9 @@ function cellHtml(f) {
   const title = escapeHtml(f.name);
   if (f.type === 'image') {
     const thumbSrc = escapeHtml(f.thumbUrl ? location.origin + f.thumbUrl : full);
-    return '<a class="gallery-cell is-image" href="' + safeUrl + '" target="_blank" title="' + title + '">' +
+    return '<a class="gallery-cell is-image" href="' + safeUrl + '" target="_blank" title="' + title +
+      '" data-name="' + title + '" data-caption="' + escapeHtml(f.caption || '') +
+      '" data-uploaded="' + escapeHtml(f.uploaded) + '">' +
       '<img loading="lazy" src="' + thumbSrc + '"></a>';
   }
   const emoji = TYPE_TILE[f.type] || '📁';
@@ -974,7 +1045,10 @@ const BATCH_GROUPS = 12;
 
 function wireGalleryCells() {
   galleryMain.querySelectorAll('a.is-image').forEach((el) => {
-    el.onclick = (e) => { e.preventDefault(); openLightbox(el.href); };
+    el.onclick = (e) => {
+      e.preventDefault();
+      openLightbox(el.href, { name: el.dataset.name, caption: el.dataset.caption, uploaded: el.dataset.uploaded });
+    };
   });
 }
 
