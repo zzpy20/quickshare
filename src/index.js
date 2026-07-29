@@ -62,6 +62,8 @@ const STYLE = `
     flex: 1; min-width: 140px; padding: 6px 10px; border-radius: 8px;
     border: 1px solid #d2d2d7; font-size: 12px;
   }
+  .tag-add-slot { display: inline-flex; align-items: center; gap: 4px; }
+  .tag-add-slot input.tag-add-input { flex: none; width: 100px; min-width: 0; }
   @media (prefers-color-scheme: dark) {
     input.caption-input { background: #2c2c2e; color: #f5f5f7; border-color: #48484a; }
   }
@@ -531,6 +533,7 @@ function render() {
         '<button type="button" class="tag-remove" data-key="' + key + '" data-tag="' + escapeHtml(t) + '" title="Remove tag">×</button>' +
         '</span>'
       ).join('');
+      const addTagSlot = '<span class="tag-add-slot"><button type="button" class="caption-add-btn add-tag-btn" data-key="' + key + '" title="Add tag">+ tag</button></span>';
       return (
         '<div class="file-row">' +
         '<div class="file-row-top">' +
@@ -542,6 +545,7 @@ function render() {
         caption +
         expiry +
         tagPills +
+        addTagSlot +
         '<div class="meta">' + fmtSize(f.size) + ' · ' + fmtDate(f.uploaded) + '</div>' +
         '<a href="' + escapeHtml(full) + '" target="_blank">open</a>' +
         '<button class="secondary small copy-file" data-url="' + escapeHtml(full) + '">Copy</button>' +
@@ -581,6 +585,12 @@ function render() {
     btn.onclick = (e) => {
       const container = e.target.closest('.caption');
       startCaptionEdit(container, e.target.dataset.key, e.target.dataset.caption);
+    };
+  });
+  groupsEl.querySelectorAll('.add-tag-btn').forEach((btn) => {
+    btn.onclick = (e) => {
+      const container = e.target.closest('.tag-add-slot');
+      startTagAdd(container, e.target.dataset.key);
     };
   });
 
@@ -695,6 +705,34 @@ function saveCaption(key, caption) {
     body: JSON.stringify({ key, caption }),
   })
     .then((r) => { if (!r.ok) throw new Error('Failed to save caption'); })
+    .then(load)
+    .catch((err) => showBanner(err.message, true));
+}
+
+function startTagAdd(container, key) {
+  container.innerHTML =
+    '<input type="text" class="caption-input tag-add-input" placeholder="tag name">' +
+    '<button type="button" class="secondary small tag-add-save">Add</button>' +
+    '<button type="button" class="secondary small tag-add-cancel">Cancel</button>';
+  const input = container.querySelector('.tag-add-input');
+  input.focus();
+  container.querySelector('.tag-add-save').onclick = () => addTag(key, input.value);
+  container.querySelector('.tag-add-cancel').onclick = () => load();
+  input.onkeydown = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); addTag(key, input.value); }
+    if (e.key === 'Escape') load();
+  };
+}
+
+function addTag(key, tag) {
+  const trimmed = tag.trim();
+  if (!trimmed) { load(); return; }
+  fetch('/admin/add-tag', {
+    method: 'POST',
+    headers: Object.assign({ 'content-type': 'application/json' }, authHeaders()),
+    body: JSON.stringify({ key, tag: trimmed }),
+  })
+    .then((r) => { if (!r.ok) throw new Error('Failed to add tag'); })
     .then(load)
     .catch((err) => showBanner(err.message, true));
 }
@@ -977,6 +1015,32 @@ export default {
       });
 
       return Response.json({ ok: true, caption: trimmed });
+    }
+
+    if (request.method === 'POST' && pathname === '/admin/add-tag') {
+      if (!checkToken(request, env)) {
+        return Response.json({ error: 'unauthorized' }, { status: 401 });
+      }
+      const { key, tag } = await request.json();
+      if (!key || !tag) return Response.json({ error: 'missing key or tag' }, { status: 400 });
+
+      const target = String(tag).trim().toLowerCase();
+      if (!target) return Response.json({ error: 'empty tag' }, { status: 400 });
+
+      const object = await env.SHARE_R2.get(key);
+      if (!object) return Response.json({ error: 'not found' }, { status: 404 });
+
+      const cm = Object.assign({}, object.customMetadata);
+      const tags = cm.tags ? cm.tags.split(',').filter(Boolean) : [];
+      if (!tags.includes(target)) tags.push(target);
+      cm.tags = tags.join(',');
+
+      await env.SHARE_R2.put(key, object.body, {
+        httpMetadata: object.httpMetadata,
+        customMetadata: cm,
+      });
+
+      return Response.json({ ok: true, tags });
     }
 
     if (request.method === 'GET' && pathname.startsWith('/b/')) {
