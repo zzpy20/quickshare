@@ -255,6 +255,50 @@ function escapeHtml(str) {
 }
 `;
 
+const LIGHTBOX_JS = `
+function fmtDate(iso) {
+  return new Date(iso).toLocaleString();
+}
+let lightboxList = [];
+let lightboxIndex = -1;
+function closeLightbox() {
+  lightbox.classList.remove('open');
+  lightboxImg.src = '';
+}
+function showLightboxAt(i) {
+  if (i < 0 || i >= lightboxList.length) return;
+  lightboxIndex = i;
+  const f = lightboxList[i];
+  lightboxImg.src = location.origin + f.url;
+  $('lightboxName').textContent = f.name || '';
+  const capEl = $('lightboxCaption');
+  if (f.caption) {
+    capEl.textContent = '📝 ' + f.caption;
+    capEl.style.display = 'block';
+  } else {
+    capEl.style.display = 'none';
+  }
+  $('lightboxDate').textContent = f.uploaded ? fmtDate(f.uploaded) : '';
+  $('lightboxPrev').disabled = i <= 0;
+  $('lightboxNext').disabled = i >= lightboxList.length - 1;
+}
+function openLightbox(list, index) {
+  lightboxList = list;
+  showLightboxAt(index);
+  lightbox.classList.add('open');
+}
+$('lightboxCopyName').onclick = (e) => copyToClipboard(e.target, $('lightboxName').textContent);
+$('lightboxPrev').onclick = () => showLightboxAt(lightboxIndex - 1);
+$('lightboxNext').onclick = () => showLightboxAt(lightboxIndex + 1);
+lightbox.onclick = (e) => { if (e.target === lightbox) closeLightbox(); };
+document.addEventListener('keydown', (e) => {
+  if (!lightbox.classList.contains('open')) return;
+  if (e.key === 'Escape') closeLightbox();
+  if (e.key === 'ArrowLeft') showLightboxAt(lightboxIndex - 1);
+  if (e.key === 'ArrowRight') showLightboxAt(lightboxIndex + 1);
+});
+`;
+
 const PAGE = `<!doctype html>
 <html lang="en">
 <head>
@@ -498,46 +542,6 @@ const searchBox = $('searchBox'), paginationEl = $('pagination'), resultsSummary
 const tagFiltersEl = $('tagFilters');
 const lightbox = $('lightbox'), lightboxImg = $('lightboxImg');
 
-let lightboxList = [];
-let lightboxIndex = -1;
-
-function closeLightbox() {
-  lightbox.classList.remove('open');
-  lightboxImg.src = '';
-}
-function showLightboxAt(i) {
-  if (i < 0 || i >= lightboxList.length) return;
-  lightboxIndex = i;
-  const f = lightboxList[i];
-  lightboxImg.src = location.origin + f.url;
-  $('lightboxName').textContent = f.name || '';
-  const capEl = $('lightboxCaption');
-  if (f.caption) {
-    capEl.textContent = '📝 ' + f.caption;
-    capEl.style.display = 'block';
-  } else {
-    capEl.style.display = 'none';
-  }
-  $('lightboxDate').textContent = f.uploaded ? fmtDate(f.uploaded) : '';
-  $('lightboxPrev').disabled = i <= 0;
-  $('lightboxNext').disabled = i >= lightboxList.length - 1;
-}
-function openLightbox(list, index) {
-  lightboxList = list;
-  showLightboxAt(index);
-  lightbox.classList.add('open');
-}
-$('lightboxCopyName').onclick = (e) => copyToClipboard(e.target, $('lightboxName').textContent);
-$('lightboxPrev').onclick = () => showLightboxAt(lightboxIndex - 1);
-$('lightboxNext').onclick = () => showLightboxAt(lightboxIndex + 1);
-lightbox.onclick = (e) => { if (e.target === lightbox) closeLightbox(); };
-document.addEventListener('keydown', (e) => {
-  if (!lightbox.classList.contains('open')) return;
-  if (e.key === 'Escape') closeLightbox();
-  if (e.key === 'ArrowLeft') showLightboxAt(lightboxIndex - 1);
-  if (e.key === 'ArrowRight') showLightboxAt(lightboxIndex + 1);
-});
-
 function showBanner(msg, isError) {
   banner.textContent = msg;
   banner.className = isError ? 'error' : '';
@@ -545,6 +549,7 @@ function showBanner(msg, isError) {
 }
 
 ${AUTH_JS}
+${LIGHTBOX_JS}
 
 let allFiles = [];
 let batchIds = [];
@@ -578,9 +583,6 @@ function fmtSize(bytes) {
   if (bytes < 1024) return bytes + ' B';
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
   return (bytes / 1024 / 1024).toFixed(1) + ' MB';
-}
-function fmtDate(iso) {
-  return new Date(iso).toLocaleString();
 }
 function fmtExpiry(deleteAt) {
   const ms = deleteAt - Date.now();
@@ -978,49 +980,6 @@ const banner = $('banner'), galleryMain = $('galleryMain'), typeFiltersEl = $('t
 const scrubberTrack = $('scrubberTrack');
 const lightbox = $('lightbox'), lightboxImg = $('lightboxImg');
 
-function fmtDate(iso) {
-  return new Date(iso).toLocaleString();
-}
-let lightboxList = [];
-let lightboxIndex = -1;
-
-function closeLightbox() {
-  lightbox.classList.remove('open');
-  lightboxImg.src = '';
-}
-function showLightboxAt(i) {
-  if (i < 0 || i >= lightboxList.length) return;
-  lightboxIndex = i;
-  const f = lightboxList[i];
-  lightboxImg.src = location.origin + f.url;
-  $('lightboxName').textContent = f.name || '';
-  const capEl = $('lightboxCaption');
-  if (f.caption) {
-    capEl.textContent = '📝 ' + f.caption;
-    capEl.style.display = 'block';
-  } else {
-    capEl.style.display = 'none';
-  }
-  $('lightboxDate').textContent = f.uploaded ? fmtDate(f.uploaded) : '';
-  $('lightboxPrev').disabled = i <= 0;
-  $('lightboxNext').disabled = i >= lightboxList.length - 1;
-}
-function openLightbox(list, index) {
-  lightboxList = list;
-  showLightboxAt(index);
-  lightbox.classList.add('open');
-}
-$('lightboxCopyName').onclick = (e) => copyToClipboard(e.target, $('lightboxName').textContent);
-$('lightboxPrev').onclick = () => showLightboxAt(lightboxIndex - 1);
-$('lightboxNext').onclick = () => showLightboxAt(lightboxIndex + 1);
-lightbox.onclick = (e) => { if (e.target === lightbox) closeLightbox(); };
-document.addEventListener('keydown', (e) => {
-  if (!lightbox.classList.contains('open')) return;
-  if (e.key === 'Escape') closeLightbox();
-  if (e.key === 'ArrowLeft') showLightboxAt(lightboxIndex - 1);
-  if (e.key === 'ArrowRight') showLightboxAt(lightboxIndex + 1);
-});
-
 function showBanner(msg, isError) {
   banner.textContent = msg;
   banner.className = isError ? 'error' : '';
@@ -1028,6 +987,7 @@ function showBanner(msg, isError) {
 }
 
 ${AUTH_JS}
+${LIGHTBOX_JS}
 
 let allFiles = [];
 let activeType = 'all';
