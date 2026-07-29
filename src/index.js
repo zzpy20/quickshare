@@ -253,7 +253,7 @@ function handleFiles(files) {
         row.innerHTML =
           '<div class="name">' + escapeHtml(u.name) + '</div>' +
           '<a href="' + escapeHtml(full) + '" target="_blank">open</a>' +
-          '<button class="secondary copy-btn" data-url="' + escapeHtml(full) + '">Copy</button>';
+          '<button class="secondary copy-btn" data-url="' + escapeHtml(full) + '">Copy links</button>';
         row.querySelector('.copy-btn').onclick = (e) => copyToClipboard(e.target, e.target.dataset.url);
       });
       if (batchUrl) {
@@ -263,7 +263,7 @@ function handleFiles(files) {
         brow.innerHTML =
           '<div class="name">📦 these ' + uploaded.length + ' files together</div>' +
           '<a href="' + full + '" target="_blank">open</a>' +
-          '<button class="secondary copy-btn" data-url="' + full + '">Copy</button>';
+          '<button class="secondary copy-btn" data-url="' + full + '">Copy links</button>';
         brow.querySelector('.copy-btn').onclick = (e) => copyToClipboard(e.target, e.target.dataset.url);
         list.prepend(brow);
       }
