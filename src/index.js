@@ -186,6 +186,7 @@ const STYLE = `
     background: #0071e3; transform: translate(50%, -50%); pointer-events: none;
     box-shadow: 0 0 0 4px rgba(0,113,227,0.15);
   }
+  #scrollSentinel { height: 1px; }
 `;
 
 const AUTH_BLOCK_HTML = `
@@ -276,7 +277,26 @@ drop.ondrop = (e) => {
 };
 fileInput.onchange = () => handleFiles(fileInput.files);
 
-function handleFiles(files) {
+async function makeThumbnail(file) {
+  if (!file.type.startsWith('image/')) return null;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const maxEdge = 400;
+    const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
+    const w = Math.max(1, Math.round(bitmap.width * scale));
+    const h = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
+    if (bitmap.close) bitmap.close();
+    return await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.75));
+  } catch (e) {
+    return null;
+  }
+}
+
+async function handleFiles(files) {
   showBanner('', false);
   const arr = [...files];
   if (!arr.length) return;
@@ -289,8 +309,13 @@ function handleFiles(files) {
     return row;
   });
 
+  const thumbs = await Promise.all(arr.map(makeThumbnail));
+
   const fd = new FormData();
-  arr.forEach((f) => fd.append('file', f, f.name));
+  arr.forEach((f, i) => {
+    fd.append('file', f, f.name);
+    if (thumbs[i]) fd.append('thumb_' + i, thumbs[i], f.name);
+  });
   fd.append('tags', tagsInput.value);
   fd.append('caption', captionInput.value);
 
@@ -579,8 +604,9 @@ function render() {
       const expiry = pendingByKey[f.key]
         ? '<span class="meta expiring">⏳ ' + fmtExpiry(pendingByKey[f.key]) + '</span>'
         : '';
+      const thumbSrc = f.thumbUrl ? location.origin + f.thumbUrl : full;
       const thumb = f.contentType && f.contentType.startsWith('image/')
-        ? '<img class="thumb" loading="lazy" src="' + escapeHtml(full) + '" data-full="' + escapeHtml(full) + '">'
+        ? '<img class="thumb" loading="lazy" src="' + escapeHtml(thumbSrc) + '" data-full="' + escapeHtml(full) + '">'
         : '';
       const captionInner = f.caption
         ? '<span class="caption-text">📝 ' + escapeHtml(f.caption) + '</span>' +
@@ -922,8 +948,9 @@ function cellHtml(f) {
   const safeUrl = escapeHtml(full);
   const title = escapeHtml(f.name);
   if (f.type === 'image') {
+    const thumbSrc = escapeHtml(f.thumbUrl ? location.origin + f.thumbUrl : full);
     return '<a class="gallery-cell is-image" href="' + safeUrl + '" target="_blank" title="' + title + '">' +
-      '<img loading="lazy" src="' + safeUrl + '"></a>';
+      '<img loading="lazy" src="' + thumbSrc + '"></a>';
   }
   const emoji = TYPE_TILE[f.type] || '📁';
   const ext = escapeHtml((f.name.split('.').pop() || '').slice(0, 4));
@@ -932,10 +959,47 @@ function cellHtml(f) {
     '<div class="cell-name">' + title + '</div></a>';
 }
 
+function dayGroupHtml(g, gi) {
+  return '<div class="gallery-day" data-group-index="' + gi + '">' +
+    '<div class="gallery-day-header">' + fmtDayHeader(g.date) + '</div>' +
+    '<div class="gallery-grid">' + g.files.map(cellHtml).join('') + '</div>' +
+    '</div>';
+}
+
+let dayGroups = [];
+let renderedCount = 0;
+let sentinelObserver = null;
+let scrollHandler = null;
+const BATCH_GROUPS = 12;
+
+function wireGalleryCells() {
+  galleryMain.querySelectorAll('a.is-image').forEach((el) => {
+    el.onclick = (e) => { e.preventDefault(); openLightbox(el.href); };
+  });
+}
+
+function renderUpTo(targetCount) {
+  if (targetCount <= renderedCount) return;
+  const sentinel = document.getElementById('scrollSentinel');
+  const temp = document.createElement('div');
+  let html = '';
+  for (let i = renderedCount; i < targetCount; i++) html += dayGroupHtml(dayGroups[i], i);
+  temp.innerHTML = html;
+  const frag = document.createDocumentFragment();
+  while (temp.firstChild) frag.appendChild(temp.firstChild);
+  if (sentinel) galleryMain.insertBefore(frag, sentinel);
+  else galleryMain.appendChild(frag);
+  renderedCount = targetCount;
+  wireGalleryCells();
+}
+
 function render() {
   renderTypeFilters();
 
   const filtered = activeType === 'all' ? allFiles : allFiles.filter((f) => f.type === activeType);
+
+  if (sentinelObserver) sentinelObserver.disconnect();
+  if (scrollHandler) window.removeEventListener('scroll', scrollHandler);
 
   if (!filtered.length) {
     galleryMain.innerHTML = '<p class="sub">No files' + (activeType === 'all' ? ' yet.' : ' of this type.') + '</p>';
@@ -943,7 +1007,7 @@ function render() {
     return;
   }
 
-  const dayGroups = [];
+  dayGroups = [];
   let currentKey = null;
   filtered.forEach((f) => {
     const dayKey = localDayKey(f.uploaded);
@@ -954,23 +1018,25 @@ function render() {
     dayGroups[dayGroups.length - 1].files.push(f);
   });
 
-  galleryMain.innerHTML = dayGroups.map((g, gi) =>
-    '<div class="gallery-day" data-group-index="' + gi + '">' +
-    '<div class="gallery-day-header">' + fmtDayHeader(g.date) + '</div>' +
-    '<div class="gallery-grid">' + g.files.map(cellHtml).join('') + '</div>' +
-    '</div>'
-  ).join('');
+  renderedCount = 0;
+  galleryMain.innerHTML = '';
+  renderUpTo(Math.min(BATCH_GROUPS, dayGroups.length));
 
-  galleryMain.querySelectorAll('a.is-image').forEach((el) => {
-    el.onclick = (e) => { e.preventDefault(); openLightbox(el.href); };
+  const sentinel = document.createElement('div');
+  sentinel.id = 'scrollSentinel';
+  galleryMain.appendChild(sentinel);
+  sentinelObserver = new IntersectionObserver((entries) => {
+    if (entries[0].isIntersecting && renderedCount < dayGroups.length) {
+      renderUpTo(Math.min(renderedCount + BATCH_GROUPS, dayGroups.length));
+    }
   });
+  sentinelObserver.observe(sentinel);
 
-  buildScrubber(dayGroups);
+  buildScrubber(dayGroups.length);
 }
 
-function buildScrubber(dayGroups) {
+function buildScrubber(totalGroups) {
   scrubberTrack.innerHTML = '';
-  const totalGroups = dayGroups.length;
   if (totalGroups < 2) return;
 
   const yearFirstIndex = new Map();
@@ -1002,6 +1068,7 @@ function buildScrubber(dayGroups) {
   scrubberTrack.appendChild(thumb);
 
   function scrollToGroup(idx) {
+    if (idx >= renderedCount) renderUpTo(Math.min(idx + 1, dayGroups.length));
     const el = galleryMain.querySelector('.gallery-day[data-group-index="' + idx + '"]');
     if (el) el.scrollIntoView({ block: 'start' });
   }
@@ -1051,6 +1118,7 @@ function buildScrubber(dayGroups) {
       }
     });
   }
+  scrollHandler = onScroll;
   window.addEventListener('scroll', onScroll, { passive: true });
   onScroll();
 }
@@ -1084,6 +1152,11 @@ function dedupeFilename(used, filename) {
 function checkToken(request, env) {
   const token = request.headers.get('x-upload-token') || '';
   return !!env.UPLOAD_TOKEN && token === env.UPLOAD_TOKEN;
+}
+
+function thumbKeyFor(key) {
+  const slash = key.indexOf('/');
+  return key.slice(0, slash + 1) + '_thumb/' + key.slice(slash + 1);
 }
 
 async function listAllObjects(bucket) {
@@ -1128,6 +1201,7 @@ async function runCleanup(env) {
   if (due.length) {
     const dueKeys = due.map((p) => p.key);
     await env.SHARE_R2.delete(dueKeys);
+    await env.SHARE_R2.delete(dueKeys.map(thumbKeyFor));
     await cleanupManifests(env.SHARE_R2, dueKeys);
   }
   await putPendingDeletes(env.SHARE_R2, remaining);
@@ -1190,7 +1264,8 @@ export default {
       const used = new Set(['_manifest.json']);
       const manifest = [];
 
-      for (const file of incoming) {
+      for (let i = 0; i < incoming.length; i++) {
+        const file = incoming[i];
         const name = dedupeFilename(used, sanitizeFilename(file.name || 'file'));
         const type = file.type || 'application/octet-stream';
         await env.SHARE_R2.put(id + '/' + name, file.stream(), {
@@ -1198,6 +1273,13 @@ export default {
           customMetadata: Object.keys(customMetadata).length ? customMetadata : undefined,
         });
         manifest.push({ name, type, size: file.size });
+
+        const thumb = form.get('thumb_' + i);
+        if (thumb && typeof thumb !== 'string') {
+          await env.SHARE_R2.put(id + '/_thumb/' + name, thumb.stream(), {
+            httpMetadata: { contentType: 'image/jpeg' },
+          });
+        }
       }
 
       if (manifest.length > 1) {
@@ -1226,13 +1308,15 @@ export default {
       }
       ctx.waitUntil(runCleanup(env));
       const objects = await listAllObjects(env.SHARE_R2);
+      const thumbKeys = new Set(objects.filter((o) => o.key.includes('/_thumb/')).map((o) => o.key));
       const files = objects
-        .filter((o) => !o.key.endsWith('/_manifest.json') && !o.key.startsWith('_system/'))
+        .filter((o) => !o.key.endsWith('/_manifest.json') && !o.key.startsWith('_system/') && !o.key.includes('/_thumb/'))
         .map((o) => {
           const slash = o.key.indexOf('/');
           const id = o.key.slice(0, slash);
           const name = o.key.slice(slash + 1);
           const cm = o.customMetadata || {};
+          const hasThumb = thumbKeys.has(thumbKeyFor(o.key));
           return {
             key: o.key,
             id,
@@ -1241,6 +1325,7 @@ export default {
             uploaded: o.uploaded,
             contentType: o.httpMetadata && o.httpMetadata.contentType,
             url: '/f/' + id + '/' + encodeURIComponent(name),
+            thumbUrl: hasThumb ? '/f/' + id + '/_thumb/' + encodeURIComponent(name) : null,
             tags: cm.tags ? cm.tags.split(',').filter(Boolean) : [],
             caption: cm.caption || '',
           };
@@ -1261,6 +1346,7 @@ export default {
         return Response.json({ error: 'no keys' }, { status: 400 });
       }
       await env.SHARE_R2.delete(keys);
+      await env.SHARE_R2.delete(keys.map(thumbKeyFor));
       await cleanupManifests(env.SHARE_R2, keys);
       return Response.json({ ok: true });
     }
@@ -1284,6 +1370,13 @@ export default {
         httpMetadata: object.httpMetadata,
         customMetadata: object.customMetadata,
       });
+
+      const thumbObj = await env.SHARE_R2.get(thumbKeyFor(key));
+      if (thumbObj) {
+        await env.SHARE_R2.put(thumbKeyFor(newKey), thumbObj.body, {
+          httpMetadata: thumbObj.httpMetadata,
+        });
+      }
 
       const pending = await getPendingDeletes(env.SHARE_R2);
       pending.push({ key, deleteAt: Date.now() + GRACE_MS });
