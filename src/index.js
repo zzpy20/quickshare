@@ -74,17 +74,19 @@ const STYLE = `
   button:hover { background: #0077ed; }
   button.secondary { background: #e8e8ed; color: #1d1d1f; }
   #drop {
-    border: 2px dashed #d2d2d7; border-radius: 16px; padding: 40px 20px;
+    border: 2px dashed #d2d2d7; border-radius: 16px; padding: 72px 20px;
     text-align: center; color: #86868b; cursor: pointer; transition: border-color .15s;
+    font-size: 17px;
   }
   #drop.hover { border-color: #0071e3; color: #0071e3; }
   #fileInput { display: none; }
   #list { margin-top: 24px; display: flex; flex-direction: column; gap: 10px; }
   .row {
-    display: flex; align-items: center; gap: 10px; background: #f5f5f7;
-    border-radius: 10px; padding: 10px 12px; font-size: 13px;
+    display: flex; align-items: center; gap: 12px; row-gap: 10px; flex-wrap: wrap;
+    background: #f5f5f7; border-radius: 10px; padding: 14px 16px; font-size: 13px;
   }
   .row.batch { background: #eaf3ff; font-weight: 600; }
+  .row .copy-btn { padding: 16px 32px; font-size: 17px; font-weight: 700; border-radius: 12px; }
   .row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .row .status { color: #86868b; flex-shrink: 0; }
   .row a { color: #0071e3; text-decoration: none; flex-shrink: 0; }
