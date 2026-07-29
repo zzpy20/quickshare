@@ -895,6 +895,10 @@ function localDayKey(dateStr) {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
+function fmtMonthYear(dateStr) {
+  return new Date(dateStr).toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+}
+
 function load() {
   galleryMain.innerHTML = '<p class="sub">Loading…</p>';
   showBanner('', false);
@@ -988,6 +992,7 @@ function buildScrubber(dayGroups) {
     label.textContent = year;
     label.style.top = pct + '%';
     label.dataset.groupIndex = idx;
+    label.dataset.year = year;
     scrubberTrack.appendChild(label);
     labels.push(label);
   });
@@ -1037,9 +1042,13 @@ function buildScrubber(dayGroups) {
       labels.forEach((l) => {
         const li = Number(l.dataset.groupIndex);
         l.classList.remove('active');
+        l.textContent = l.dataset.year;
         if (li <= currentIdx && li > bestIdx) { bestIdx = li; best = l; }
       });
-      if (best) best.classList.add('active');
+      if (best) {
+        best.classList.add('active');
+        best.textContent = fmtMonthYear(dayGroups[currentIdx].date);
+      }
     });
   }
   window.addEventListener('scroll', onScroll, { passive: true });
