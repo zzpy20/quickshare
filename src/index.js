@@ -127,6 +127,65 @@ const STYLE = `
     box-shadow: 0 4px 14px rgba(0,0,0,0.28); z-index: 1000;
   }
   .fab:hover { background: #0077ed; }
+
+  body.gallery-page { padding-right: 56px; }
+  @media (min-width: 900px) { body.gallery-page { padding-right: 64px; } }
+  #typeFilters { display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0 20px; }
+  .type-chip {
+    padding: 6px 14px; border-radius: 999px; background: #e8e8ed; color: #1d1d1f;
+    font-size: 13px; cursor: pointer; border: none; font-weight: 500;
+  }
+  .type-chip.active { background: #0071e3; color: #fff; }
+  .gallery-day { scroll-margin-top: 8px; }
+  .gallery-day-header {
+    position: sticky; top: 0; background: #fff; z-index: 10;
+    font-size: 14px; font-weight: 600; padding: 10px 0; color: #1d1d1f;
+  }
+  @media (prefers-color-scheme: dark) { .gallery-day-header { background: #1c1c1e; color: #f5f5f7; } }
+  .gallery-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 4px;
+    margin-bottom: 20px;
+  }
+  @media (min-width: 900px) { .gallery-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 6px; } }
+  .gallery-cell {
+    position: relative; aspect-ratio: 1; border-radius: 6px; overflow: hidden;
+    background: #f5f5f7; display: block; text-decoration: none;
+  }
+  @media (prefers-color-scheme: dark) { .gallery-cell { background: #2c2c2e; } }
+  .gallery-cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .gallery-cell .type-tile {
+    width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 4px;
+  }
+  .gallery-cell .type-tile .emoji { font-size: 28px; }
+  .gallery-cell .type-tile .ext { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #86868b; }
+  .gallery-cell .cell-name {
+    position: absolute; left: 0; right: 0; bottom: 0; padding: 4px 6px;
+    font-size: 10px; color: #fff; background: linear-gradient(transparent, rgba(0,0,0,0.65));
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .scrubber {
+    position: fixed; right: 0; top: 0; bottom: 0; width: 52px;
+    display: flex; align-items: center; justify-content: center; z-index: 900;
+  }
+  .scrubber-track {
+    position: relative; height: 72vh; width: 100%; touch-action: none; cursor: pointer;
+  }
+  .scrubber-tick {
+    position: absolute; right: 20px; width: 4px; height: 4px; border-radius: 50%;
+    background: #d2d2d7; transform: translateY(-50%);
+  }
+  @media (prefers-color-scheme: dark) { .scrubber-tick { background: #48484a; } }
+  .scrubber-label {
+    position: absolute; right: 28px; transform: translateY(-50%); font-size: 11px;
+    color: #86868b; white-space: nowrap; pointer-events: none;
+  }
+  .scrubber-label.active { color: #0071e3; font-weight: 700; }
+  .scrubber-thumb {
+    position: absolute; right: 14px; width: 9px; height: 9px; border-radius: 50%;
+    background: #0071e3; transform: translate(50%, -50%); pointer-events: none;
+    box-shadow: 0 0 0 4px rgba(0,113,227,0.15);
+  }
 `;
 
 const AUTH_BLOCK_HTML = `
@@ -192,7 +251,7 @@ const PAGE = `<!doctype html>
 
   <div id="list"></div>
 
-  <p class="sub" style="margin-top:40px;"><a class="footer-link" href="/admin">Admin →</a></p>
+  <p class="sub" style="margin-top:40px;"><a class="footer-link" href="/admin">Admin →</a> &nbsp; <a class="footer-link" href="/gallery">Gallery →</a></p>
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -329,7 +388,7 @@ const ADMIN_PAGE = `<!doctype html>
 </head>
 <body>
   <h1>quickshare admin</h1>
-  <p class="sub">All uploaded files.</p>
+  <p class="sub">All uploaded files. <a class="footer-link" href="/gallery">Gallery →</a></p>
 
   <div id="banner"></div>
 
@@ -742,6 +801,256 @@ load();
 </body>
 </html>`;
 
+const GALLERY_PAGE = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>quickshare gallery</title>
+<style>${STYLE}</style>
+</head>
+<body class="gallery-page">
+  <h1>Gallery</h1>
+  <p class="sub"><a class="footer-link" href="/">Upload →</a> &nbsp; <a class="footer-link" href="/admin">Manage →</a></p>
+
+  <div id="banner"></div>
+
+  ${AUTH_BLOCK_HTML}
+
+  <div id="typeFilters"></div>
+
+  <div id="galleryMain"><p class="sub">Loading…</p></div>
+
+  <div class="scrubber" id="scrubber">
+    <div class="scrubber-track" id="scrubberTrack"></div>
+  </div>
+
+  <div id="lightbox"><img id="lightboxImg" alt=""></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const banner = $('banner'), galleryMain = $('galleryMain'), typeFiltersEl = $('typeFilters');
+const scrubberTrack = $('scrubberTrack');
+const lightbox = $('lightbox'), lightboxImg = $('lightboxImg');
+
+function openLightbox(url) {
+  lightboxImg.src = url;
+  lightbox.classList.add('open');
+}
+lightbox.onclick = () => { lightbox.classList.remove('open'); lightboxImg.src = ''; };
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { lightbox.classList.remove('open'); lightboxImg.src = ''; }
+});
+
+function showBanner(msg, isError) {
+  banner.textContent = msg;
+  banner.className = isError ? 'error' : '';
+  banner.style.display = msg ? 'block' : 'none';
+}
+
+${AUTH_JS}
+
+let allFiles = [];
+let activeType = 'all';
+
+const TYPE_DEFS = [
+  { key: 'all', label: 'All' },
+  { key: 'image', label: '📷 Photos & images' },
+  { key: 'pdf', label: '📄 PDFs' },
+  { key: 'video', label: '🎬 Videos' },
+  { key: 'audio', label: '🎵 Audio' },
+  { key: 'document', label: '📝 Documents' },
+  { key: 'archive', label: '📦 Archives' },
+  { key: 'other', label: '📁 Other' },
+];
+const TYPE_TILE = { pdf: '📄', video: '🎬', audio: '🎵', document: '📝', archive: '📦', other: '📁' };
+
+function classifyType(contentType) {
+  const ct = (contentType || '').toLowerCase();
+  if (ct.startsWith('image/')) return 'image';
+  if (ct === 'application/pdf') return 'pdf';
+  if (ct.startsWith('video/')) return 'video';
+  if (ct.startsWith('audio/')) return 'audio';
+  if (ct.startsWith('text/') || ct.includes('word') || ct.includes('document') || ct === 'application/rtf' || ct.includes('opendocument')) return 'document';
+  if (ct.includes('zip') || ct.includes('tar') || ct.includes('rar') || ct.includes('7z') || ct.includes('gzip')) return 'archive';
+  return 'other';
+}
+
+function renderTypeFilters() {
+  typeFiltersEl.innerHTML = TYPE_DEFS.map((t) =>
+    '<button type="button" class="type-chip' + (activeType === t.key ? ' active' : '') + '" data-type="' + t.key + '">' + t.label + '</button>'
+  ).join('');
+  typeFiltersEl.querySelectorAll('.type-chip').forEach((btn) => {
+    btn.onclick = () => { activeType = btn.dataset.type; render(); };
+  });
+}
+
+function fmtDayHeader(dateStr) {
+  const d = new Date(dateStr);
+  return d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function localDayKey(dateStr) {
+  const d = new Date(dateStr);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function load() {
+  galleryMain.innerHTML = '<p class="sub">Loading…</p>';
+  showBanner('', false);
+  fetch('/admin/list', { headers: authHeaders() })
+    .then(async (r) => {
+      if (r.status === 401) { showAuth(true); throw new Error('Wrong password'); }
+      if (!r.ok) throw new Error('Failed to load');
+      return r.json();
+    })
+    .then(({ files }) => {
+      allFiles = files
+        .map((f) => Object.assign({}, f, { type: classifyType(f.contentType) }))
+        .sort((a, b) => new Date(b.uploaded) - new Date(a.uploaded));
+      render();
+    })
+    .catch((err) => { showBanner(err.message, true); galleryMain.innerHTML = ''; });
+}
+
+function cellHtml(f) {
+  const full = location.origin + f.url;
+  const safeUrl = escapeHtml(full);
+  const title = escapeHtml(f.name);
+  if (f.type === 'image') {
+    return '<a class="gallery-cell is-image" href="' + safeUrl + '" target="_blank" title="' + title + '">' +
+      '<img loading="lazy" src="' + safeUrl + '"></a>';
+  }
+  const emoji = TYPE_TILE[f.type] || '📁';
+  const ext = escapeHtml((f.name.split('.').pop() || '').slice(0, 4));
+  return '<a class="gallery-cell" href="' + safeUrl + '" target="_blank" title="' + title + '">' +
+    '<div class="type-tile"><span class="emoji">' + emoji + '</span><span class="ext">' + ext + '</span></div>' +
+    '<div class="cell-name">' + title + '</div></a>';
+}
+
+function render() {
+  renderTypeFilters();
+
+  const filtered = activeType === 'all' ? allFiles : allFiles.filter((f) => f.type === activeType);
+
+  if (!filtered.length) {
+    galleryMain.innerHTML = '<p class="sub">No files' + (activeType === 'all' ? ' yet.' : ' of this type.') + '</p>';
+    scrubberTrack.innerHTML = '';
+    return;
+  }
+
+  const dayGroups = [];
+  let currentKey = null;
+  filtered.forEach((f) => {
+    const dayKey = localDayKey(f.uploaded);
+    if (dayKey !== currentKey) {
+      dayGroups.push({ date: f.uploaded, files: [] });
+      currentKey = dayKey;
+    }
+    dayGroups[dayGroups.length - 1].files.push(f);
+  });
+
+  galleryMain.innerHTML = dayGroups.map((g, gi) =>
+    '<div class="gallery-day" data-group-index="' + gi + '">' +
+    '<div class="gallery-day-header">' + fmtDayHeader(g.date) + '</div>' +
+    '<div class="gallery-grid">' + g.files.map(cellHtml).join('') + '</div>' +
+    '</div>'
+  ).join('');
+
+  galleryMain.querySelectorAll('a.is-image').forEach((el) => {
+    el.onclick = (e) => { e.preventDefault(); openLightbox(el.href); };
+  });
+
+  buildScrubber(dayGroups);
+}
+
+function buildScrubber(dayGroups) {
+  scrubberTrack.innerHTML = '';
+  const totalGroups = dayGroups.length;
+  if (totalGroups < 2) return;
+
+  const yearFirstIndex = new Map();
+  dayGroups.forEach((g, i) => {
+    const year = String(new Date(g.date).getFullYear());
+    if (!yearFirstIndex.has(year)) yearFirstIndex.set(year, i);
+  });
+
+  const labels = [];
+  yearFirstIndex.forEach((idx, year) => {
+    const pct = (idx / totalGroups) * 100;
+    const tick = document.createElement('div');
+    tick.className = 'scrubber-tick';
+    tick.style.top = pct + '%';
+    scrubberTrack.appendChild(tick);
+
+    const label = document.createElement('div');
+    label.className = 'scrubber-label';
+    label.textContent = year;
+    label.style.top = pct + '%';
+    label.dataset.groupIndex = idx;
+    scrubberTrack.appendChild(label);
+    labels.push(label);
+  });
+
+  const thumb = document.createElement('div');
+  thumb.className = 'scrubber-thumb';
+  scrubberTrack.appendChild(thumb);
+
+  function scrollToGroup(idx) {
+    const el = galleryMain.querySelector('.gallery-day[data-group-index="' + idx + '"]');
+    if (el) el.scrollIntoView({ block: 'start' });
+  }
+
+  function handlePointer(clientY) {
+    const rect = scrubberTrack.getBoundingClientRect();
+    let pct = (clientY - rect.top) / rect.height;
+    pct = Math.min(Math.max(pct, 0), 1);
+    thumb.style.top = (pct * 100) + '%';
+    const idx = Math.min(totalGroups - 1, Math.floor(pct * totalGroups));
+    scrollToGroup(idx);
+  }
+
+  let dragging = false;
+  scrubberTrack.onpointerdown = (e) => {
+    dragging = true;
+    handlePointer(e.clientY);
+    scrubberTrack.setPointerCapture(e.pointerId);
+  };
+  scrubberTrack.onpointermove = (e) => { if (dragging) handlePointer(e.clientY); };
+  scrubberTrack.onpointerup = () => { dragging = false; };
+  scrubberTrack.onpointercancel = () => { dragging = false; };
+
+  let ticking = false;
+  function onScroll() {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(() => {
+      ticking = false;
+      const groups = [...galleryMain.querySelectorAll('.gallery-day')];
+      let currentIdx = 0;
+      for (const g of groups) {
+        if (g.getBoundingClientRect().top <= 60) currentIdx = Number(g.dataset.groupIndex);
+        else break;
+      }
+      thumb.style.top = ((currentIdx / totalGroups) * 100) + '%';
+      let best = null, bestIdx = -1;
+      labels.forEach((l) => {
+        const li = Number(l.dataset.groupIndex);
+        l.classList.remove('active');
+        if (li <= currentIdx && li > bestIdx) { bestIdx = li; best = l; }
+      });
+      if (best) best.classList.add('active');
+    });
+  }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+}
+
+load();
+</script>
+</body>
+</html>`;
+
 function randomId() {
   const bytes = crypto.getRandomValues(new Uint8Array(6));
   return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -896,6 +1205,10 @@ export default {
 
     if (request.method === 'GET' && pathname === '/admin') {
       return new Response(ADMIN_PAGE, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+    }
+
+    if (request.method === 'GET' && pathname === '/gallery') {
+      return new Response(GALLERY_PAGE, { headers: { 'content-type': 'text/html; charset=utf-8' } });
     }
 
     if (request.method === 'GET' && pathname === '/admin/list') {
