@@ -12,6 +12,14 @@ A personal file/image upload tool. Drop a file, get a link, share it. Built with
 
 quickshare exists for one reason: sometimes you just need to upload a screenshot, PDF, or video and hand someone a link — no account, no folder structure, no fuss. It's a single Cloudflare Worker backed by R2 storage, with no database and no build step.
 
+### Screenshots
+
+| Upload | Admin | Gallery |
+|---|---|---|
+| ![Upload page](docs/screenshots/upload.jpg) | ![Admin page](docs/screenshots/admin.jpg) | ![Gallery page](docs/screenshots/gallery.png) |
+
+*(Sample data shown above — not real uploads.)*
+
 ### Features
 
 - **Drag-and-drop upload** — one file or many at once, from the browser
@@ -49,6 +57,14 @@ Cloudflare Workers (JavaScript, single file) + Cloudflare R2, deployed with Wran
 ## 中文
 
 quickshare 是一个个人文件/图片上传工具。目的很简单：有时候你只是想上传一张截图、一份 PDF 或一段视频，然后把链接发给别人——不需要账号，不需要整理文件夹，越简单越好。它是一个单文件的 Cloudflare Worker，后端存储用 R2，没有数据库，也不需要构建步骤。
+
+### 截图
+
+| 上传页 | 管理面板 | 相册 |
+|---|---|---|
+| ![上传页](docs/screenshots/upload.jpg) | ![管理面板](docs/screenshots/admin.jpg) | ![相册页](docs/screenshots/gallery.png) |
+
+*（以上为示例数据，非真实上传内容。）*
 
 ### 功能特性
 
