@@ -160,6 +160,17 @@ const STYLE = `
     #lightboxPrev { left: 6px; }
     #lightboxNext { right: 6px; }
   }
+  #siteFooter {
+    margin: 48px 0 24px; padding-top: 20px; border-top: 1px solid #d2d2d7;
+    color: #86868b; font-size: 12px; line-height: 1.6; max-width: 640px;
+  }
+  #siteFooter p { margin: 0 0 6px; }
+  #siteFooter a { color: #86868b; }
+  #siteFooter strong { color: #1d1d1f; }
+  @media (prefers-color-scheme: dark) {
+    #siteFooter { border-top-color: #38383a; }
+    #siteFooter strong { color: #f5f5f7; }
+  }
   .file-row-actions { display: flex; align-items: center; gap: 8px; row-gap: 6px; flex-wrap: wrap; margin-top: 6px; padding-left: 26px; }
   .file-row .meta { color: #86868b; font-size: 12px; flex-shrink: 0; }
   .file-row .meta.expiring { color: #ff9500; font-weight: 600; }
@@ -241,6 +252,13 @@ const AUTH_BLOCK_HTML = `
     <input type="password" id="token" placeholder="Upload password">
     <button id="saveToken">Save</button>
   </div>
+`;
+
+const SITE_FOOTER_HTML = `
+  <footer id="siteFooter">
+    <p><strong>quickshare</strong> — <a href="https://share.1000600.xyz">share.1000600.xyz</a></p>
+    <p>A personal file/image upload tool: drop a file, get a link, share it — no account or login needed to view or download. Features drag-and-drop upload with instant shareable links, batch upload links, password-gated uploads, an admin panel for tagging, captioning, search and bulk delete, and a photo-gallery view with date scrubbing and type filters.</p>
+  </footer>
 `;
 
 const AUTH_JS = `
@@ -411,6 +429,8 @@ const PAGE = `<!doctype html>
   <div id="list"></div>
 
   ${navBar('margin-top:40px;', navPill('/admin', 'Admin →'), navPill('/gallery', 'Gallery →'))}
+
+  ${SITE_FOOTER_HTML}
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -614,6 +634,8 @@ const ADMIN_PAGE = `<!doctype html>
       </div>
     </div>
   </div>
+
+  ${SITE_FOOTER_HTML}
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -1146,6 +1168,8 @@ const GALLERY_PAGE = `<!doctype html>
     </div>
     <button type="button" id="lightboxNext" class="lightbox-nav" title="Next">›</button>
   </div>
+
+  ${SITE_FOOTER_HTML}
 
 <script>
 const $ = (id) => document.getElementById(id);
