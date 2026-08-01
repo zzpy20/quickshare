@@ -30,6 +30,20 @@ quickshare exists for one reason: sometimes you just need to upload a screenshot
 
 Cloudflare Workers (JavaScript, single file) + Cloudflare R2, deployed with Wrangler. No frameworks, no build step.
 
+### Changelog
+
+**2026-08-01**
+- Multi-line captions on both the upload page and the admin inline editor
+- Type filter chips (Photos & images / PDFs / Videos / Audio / Documents / Archives / Other) on the admin page, matching the gallery
+- Restyled the Upload/Admin/Gallery cross-links as colored pill buttons, and gave every page a link to both of the others
+- Custom confirm modal (Cancel/Delete) for every delete action — single file, batch, and bulk-selected; single-file delete previously had no confirmation at all
+- Site footer with the live URL and a short feature summary on all three pages
+- Fixed a bug where editing a caption or tag reset a file's displayed date to "now" — the true upload date is now preserved in R2 customMetadata across edits and link regeneration
+- Small/Large thumbnail size toggle on the gallery (pure CSS, no new thumbnail assets)
+- Tag autocomplete on the upload page's tag field and the admin page's per-file tag-add input, suggesting existing tags as you type
+  - Fixed a race where a delayed blur-close could wipe a freshly-reopened suggestion dropdown
+  - Fixed the suggestion dropdown rendering behind the next file card (stacking-context issue); also added `Cache-Control: no-store` to the app pages after discovering a stale browser cache was masking the fix during testing
+
 ---
 
 ## 中文
@@ -53,3 +67,17 @@ quickshare 是一个个人文件/图片上传工具。目的很简单：有时�
 ### 技术栈
 
 Cloudflare Workers（JavaScript，单文件）+ Cloudflare R2，用 Wrangler 部署。没有前端框架，不需要构建步骤。
+
+### 更新日志
+
+**2026-08-01**
+- 上传页和管理面板的行内编辑器，标题/备注（caption）字段支持多行输入
+- 管理面板新增类型筛选标签（图片 / PDF / 视频 / 音频 / 文档 / 压缩包 / 其他），与相册页保持一致
+- 将上传、管理、相册三个页面之间的跳转链接改为彩色胶囊按钮样式，并让每个页面都能直接跳转到另外两个页面
+- 所有删除操作（单个文件、整批、批量勾选）新增自定义确认弹窗（取消/删除）；此前单文件删除完全没有二次确认
+- 三个页面底部新增页脚，展示网站链接和功能简介
+- 修复了编辑标题或标签会把文件显示的日期重置为"当前时间"的问题——真实上传时间现在会保存在 R2 的 customMetadata 中，编辑或重新生成链接都不会覆盖它
+- 相册页新增缩略图"小/大"尺寸切换（纯 CSS 实现，不生成新的缩略图文件）
+- 上传页的标签输入框和管理面板每个文件的"+标签"输入框新增自动补全，输入时会提示已有的相似标签
+  - 修复了一处竞态问题：失焦后延迟关闭的建议下拉框，可能会在重新聚焦后误把刚打开的下拉框关掉
+  - 修复了建议下拉框被下一个文件卡片遮挡的层级问题；排查过程中发现浏览器缓存了旧版本页面导致看不到修复效果，因此也给这几个页面加上了 `Cache-Control: no-store`
