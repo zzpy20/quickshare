@@ -130,6 +130,20 @@ const STYLE = `
   #lightboxCaption { font-style: italic; opacity: 0.85; margin-top: 4px; user-select: text; white-space: pre-line; }
   #lightboxDate { opacity: 0.6; font-size: 12px; margin-top: 4px; }
   #lightboxCopyName { margin-top: 8px; }
+  #confirmOverlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+    align-items: center; justify-content: center; z-index: 3000; padding: 20px;
+  }
+  #confirmOverlay.open { display: flex; }
+  #confirmBox {
+    background: #fff; color: #1d1d1f; border-radius: 14px; padding: 20px 22px;
+    max-width: 380px; width: 100%; box-shadow: 0 10px 40px rgba(0,0,0,0.28);
+  }
+  @media (prefers-color-scheme: dark) { #confirmBox { background: #2c2c2e; color: #f5f5f7; } }
+  #confirmMessage { font-size: 14px; line-height: 1.5; margin: 0 0 18px; }
+  #confirmActions { display: flex; justify-content: flex-end; gap: 8px; }
+  #confirmOk { background: #ff3b30; }
+  #confirmOk:hover { background: #ff2d1f; }
   .lightbox-nav {
     position: fixed; top: 50%; transform: translateY(-50%);
     width: 44px; height: 44px; border-radius: 50%; background: rgba(255,255,255,0.15);
@@ -591,6 +605,16 @@ const ADMIN_PAGE = `<!doctype html>
     <button type="button" id="lightboxNext" class="lightbox-nav" title="Next">›</button>
   </div>
 
+  <div id="confirmOverlay">
+    <div id="confirmBox">
+      <p id="confirmMessage"></p>
+      <div id="confirmActions">
+        <button type="button" id="confirmCancel" class="secondary small">Cancel</button>
+        <button type="button" id="confirmOk" class="small">Delete</button>
+      </div>
+    </div>
+  </div>
+
 <script>
 const $ = (id) => document.getElementById(id);
 const banner = $('banner'), groupsEl = $('groups'), bulkBtn = $('bulkDelete'), selectAllBox = $('selectAll');
@@ -598,11 +622,34 @@ const searchBox = $('searchBox'), paginationEl = $('pagination'), resultsSummary
 const tagFiltersEl = $('tagFilters');
 const typeFiltersEl = $('typeFilters');
 const lightbox = $('lightbox'), lightboxImg = $('lightboxImg');
+const confirmOverlay = $('confirmOverlay'), confirmMessageEl = $('confirmMessage');
+const confirmCancelBtn = $('confirmCancel'), confirmOkBtn = $('confirmOk');
 
 function showBanner(msg, isError) {
   banner.textContent = msg;
   banner.className = isError ? 'error' : '';
   banner.style.display = msg ? 'block' : 'none';
+}
+
+function confirmDialog(message, okLabel) {
+  return new Promise((resolve) => {
+    confirmMessageEl.textContent = message;
+    confirmOkBtn.textContent = okLabel || 'Delete';
+    confirmOverlay.classList.add('open');
+    const finish = (result) => {
+      confirmOverlay.classList.remove('open');
+      confirmOkBtn.onclick = null;
+      confirmCancelBtn.onclick = null;
+      confirmOverlay.onclick = null;
+      document.removeEventListener('keydown', onKey);
+      resolve(result);
+    };
+    const onKey = (e) => { if (e.key === 'Escape') finish(false); };
+    confirmOkBtn.onclick = () => finish(true);
+    confirmCancelBtn.onclick = () => finish(false);
+    confirmOverlay.onclick = (e) => { if (e.target === confirmOverlay) finish(false); };
+    document.addEventListener('keydown', onKey);
+  });
 }
 
 ${AUTH_JS}
@@ -819,15 +866,20 @@ function render() {
     btn.onclick = (e) => copyToClipboard(e.target, e.target.dataset.url);
   });
   groupsEl.querySelectorAll('.delete-batch').forEach((btn) => {
-    btn.onclick = (e) => {
+    btn.onclick = async (e) => {
       const groupFiles = byId[e.target.dataset.id] || [];
       if (!groupFiles.length) return;
-      if (!confirm('Delete all ' + groupFiles.length + ' files in this batch? This cannot be undone.')) return;
+      const ok = await confirmDialog('Delete all ' + groupFiles.length + ' files in this batch? This cannot be undone.');
+      if (!ok) return;
       deleteKeys(groupFiles.map((f) => f.key));
     };
   });
   groupsEl.querySelectorAll('.del').forEach((btn) => {
-    btn.onclick = (e) => deleteKeys([e.target.dataset.key]);
+    btn.onclick = async (e) => {
+      const ok = await confirmDialog('Delete this file? This cannot be undone.');
+      if (!ok) return;
+      deleteKeys([e.target.dataset.key]);
+    };
   });
   groupsEl.querySelectorAll('.regen').forEach((btn) => {
     btn.onclick = (e) => regenerate(e.target.dataset.key, e.target);
@@ -883,8 +935,9 @@ selectAllBox.onchange = () => {
   render();
 };
 
-bulkBtn.onclick = () => {
-  if (!confirm('Delete ' + selected.size + ' file(s)? This cannot be undone.')) return;
+bulkBtn.onclick = async () => {
+  const ok = await confirmDialog('Delete ' + selected.size + ' file(s)? This cannot be undone.');
+  if (!ok) return;
   deleteKeys([...selected]);
 };
 
