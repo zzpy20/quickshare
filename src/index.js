@@ -205,6 +205,9 @@ const STYLE = `
     margin-bottom: 20px;
   }
   @media (min-width: 900px) { .gallery-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 6px; } }
+  #galleryMain.large .gallery-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; }
+  @media (min-width: 900px) { #galleryMain.large .gallery-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; } }
+  .size-toggle { display: flex; gap: 6px; margin: -10px 0 20px; }
   .gallery-cell {
     position: relative; aspect-ratio: 1; border-radius: 6px; overflow: hidden;
     background: #f5f5f7; display: block; text-decoration: none;
@@ -1149,6 +1152,11 @@ const GALLERY_PAGE = `<!doctype html>
 
   <div id="typeFilters"></div>
 
+  <div id="sizeToggle" class="size-toggle">
+    <button type="button" class="type-chip" data-size="compact">Small</button>
+    <button type="button" class="type-chip" data-size="large">Large</button>
+  </div>
+
   <div id="galleryMain"><p class="sub">Loading…</p></div>
 
   <div class="scrubber" id="scrubber">
@@ -1176,6 +1184,7 @@ const $ = (id) => document.getElementById(id);
 const banner = $('banner'), galleryMain = $('galleryMain'), typeFiltersEl = $('typeFilters');
 const scrubberTrack = $('scrubberTrack');
 const lightbox = $('lightbox'), lightboxImg = $('lightboxImg');
+const sizeToggleEl = $('sizeToggle');
 
 function showBanner(msg, isError) {
   banner.textContent = msg;
@@ -1189,6 +1198,25 @@ ${TYPE_JS}
 
 let allFiles = [];
 let activeType = 'all';
+let gridSize = localStorage.getItem('qs_gallery_size') === 'large' ? 'large' : 'compact';
+
+function applyGridSize() {
+  galleryMain.classList.toggle('large', gridSize === 'large');
+}
+
+function renderSizeToggle() {
+  sizeToggleEl.querySelectorAll('.type-chip').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.size === gridSize);
+    btn.onclick = () => {
+      gridSize = btn.dataset.size;
+      localStorage.setItem('qs_gallery_size', gridSize);
+      applyGridSize();
+      renderSizeToggle();
+    };
+  });
+}
+renderSizeToggle();
+applyGridSize();
 
 function renderTypeFilters() {
   renderTypeChips(typeFiltersEl, activeType, (type) => { activeType = type; render(); });
