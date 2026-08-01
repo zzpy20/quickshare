@@ -66,8 +66,18 @@ const STYLE = `
   textarea.caption-input { resize: vertical; min-height: 40px; }
   .tag-add-slot { display: inline-flex; align-items: center; gap: 4px; }
   .tag-add-slot input.tag-add-input { flex: none; width: 100px; min-width: 0; }
+  .field-wrap, .tag-add-wrap { position: relative; display: inline-block; }
+  .field-wrap { display: block; }
+  .tag-suggest {
+    position: absolute; top: 100%; left: 0; margin-top: 4px; background: #fff;
+    border: 1px solid #d2d2d7; border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,0.14);
+    max-height: 180px; overflow-y: auto; z-index: 50; min-width: 140px;
+  }
+  .tag-suggest div { padding: 6px 10px; font-size: 13px; cursor: pointer; white-space: nowrap; }
+  .tag-suggest div:hover, .tag-suggest div.active { background: #0071e3; color: #fff; }
   @media (prefers-color-scheme: dark) {
     .caption-input { background: #2c2c2e; color: #f5f5f7; border-color: #48484a; }
+    .tag-suggest { background: #2c2c2e; border-color: #48484a; }
   }
   button {
     padding: 10px 16px; border-radius: 10px; border: none; background: #0071e3;
@@ -392,6 +402,83 @@ function renderTypeChips(container, activeType, onSelect) {
 }
 `;
 
+const TAG_AUTOCOMPLETE_JS = `
+function attachTagAutocomplete(input, getTags, opts) {
+  const multi = !!(opts && opts.multi);
+  const box = document.createElement('div');
+  box.className = 'tag-suggest';
+  box.style.display = 'none';
+  input.insertAdjacentElement('afterend', box);
+  let items = [];
+  let activeIndex = -1;
+  let blurTimer = null;
+
+  function currentTerm() {
+    if (!multi) return input.value.trim().toLowerCase();
+    const parts = input.value.split(',');
+    return parts[parts.length - 1].trim().toLowerCase();
+  }
+  function usedTags() {
+    if (!multi) return [];
+    return input.value.split(',').slice(0, -1).map((t) => t.trim().toLowerCase()).filter(Boolean);
+  }
+  function close() {
+    box.style.display = 'none';
+    items = [];
+    activeIndex = -1;
+  }
+  function renderItems() {
+    box.innerHTML = items.map((t, i) =>
+      '<div class="' + (i === activeIndex ? 'active' : '') + '" data-i="' + i + '">' + escapeHtml(t) + '</div>'
+    ).join('');
+    box.querySelectorAll('div[data-i]').forEach((el) => {
+      el.onmousedown = (e) => { e.preventDefault(); pick(items[Number(el.dataset.i)]); };
+    });
+    box.style.display = items.length ? 'block' : 'none';
+  }
+  function pick(tag) {
+    if (multi) {
+      const parts = input.value.split(',');
+      parts[parts.length - 1] = (parts.length > 1 ? ' ' : '') + tag;
+      input.value = parts.join(',').trim() + ', ';
+    } else {
+      input.value = tag;
+    }
+    close();
+    input.focus();
+  }
+  function update() {
+    const term = currentTerm();
+    if (!term) { close(); return; }
+    const exclude = new Set(usedTags());
+    const matches = (getTags() || []).filter((t) =>
+      t.toLowerCase().includes(term) && t.toLowerCase() !== term && !exclude.has(t.toLowerCase())
+    );
+    items = matches.slice(0, 8);
+    activeIndex = -1;
+    renderItems();
+  }
+  input.addEventListener('input', update);
+  input.addEventListener('focus', () => {
+    if (blurTimer) { clearTimeout(blurTimer); blurTimer = null; }
+    update();
+  });
+  input.addEventListener('blur', () => { blurTimer = setTimeout(close, 150); });
+  input.addEventListener('keydown', (e) => {
+    if (!items.length) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); activeIndex = Math.min(activeIndex + 1, items.length - 1); renderItems(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); activeIndex = Math.max(activeIndex - 1, 0); renderItems(); }
+    else if ((e.key === 'Enter' || e.key === 'Tab') && activeIndex >= 0) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      pick(items[activeIndex]);
+    } else if (e.key === 'Escape') {
+      close();
+    }
+  });
+}
+`;
+
 function navPill(href, label) {
   const style = 'display:inline-flex;align-items:center;gap:4px;padding:8px 16px;margin:4px 8px 4px 0;' +
     'background:#0071e3;color:#fff;border-radius:20px;font-size:13px;font-weight:600;text-decoration:none;' +
@@ -421,7 +508,7 @@ const PAGE = `<!doctype html>
   ${AUTH_BLOCK_HTML}
 
   <label class="field-label" for="tagsInput">Tags (comma separated)</label>
-  <input type="text" id="tagsInput" class="meta-input" placeholder="e.g. tech, read-later">
+  <div class="field-wrap"><input type="text" id="tagsInput" class="meta-input" placeholder="e.g. tech, read-later"></div>
 
   <label class="field-label" for="captionInput">Caption (optional)</label>
   <textarea id="captionInput" class="meta-input" placeholder="Add a note…" rows="2"></textarea>
@@ -448,6 +535,14 @@ function showBanner(msg, isError) {
 
 ${AUTH_JS}
 ${THUMBNAIL_JS}
+${TAG_AUTOCOMPLETE_JS}
+
+let knownTags = [];
+fetch('/admin/tags', { headers: authHeaders() })
+  .then((r) => (r.ok ? r.json() : { tags: [] }))
+  .then(({ tags }) => { knownTags = tags || []; })
+  .catch(() => {});
+attachTagAutocomplete(tagsInput, () => knownTags, { multi: true });
 
 drop.onclick = () => fileInput.click();
 drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('hover'); };
@@ -681,6 +776,7 @@ ${AUTH_JS}
 ${LIGHTBOX_JS}
 ${THUMBNAIL_JS}
 ${TYPE_JS}
+${TAG_AUTOCOMPLETE_JS}
 
 let allFiles = [];
 let batchIds = [];
@@ -692,14 +788,18 @@ let currentPage = 1;
 const PAGE_SIZE = 20;
 const selected = new Set();
 
+function allKnownTags() {
+  const tagSet = new Set();
+  allFiles.forEach((f) => (f.tags || []).forEach((t) => tagSet.add(t)));
+  return [...tagSet].sort();
+}
+
 function renderTypeFilters() {
   renderTypeChips(typeFiltersEl, activeType, (type) => { activeType = type; currentPage = 1; render(); });
 }
 
 function renderTagFilters() {
-  const tagSet = new Set();
-  allFiles.forEach((f) => (f.tags || []).forEach((t) => tagSet.add(t)));
-  const tags = [...tagSet].sort();
+  const tags = allKnownTags();
   if (!tags.length) { tagFiltersEl.innerHTML = ''; return; }
   tagFiltersEl.innerHTML = tags.map((t) =>
     '<button type="button" class="tag-chip' + (activeTag === t ? ' active' : '') + '" data-tag="' + escapeHtml(t) + '">' + escapeHtml(t) + '</button>'
@@ -1103,11 +1203,12 @@ function saveCaption(key, caption) {
 
 function startTagAdd(container, key) {
   container.innerHTML =
-    '<input type="text" class="caption-input tag-add-input" placeholder="tag name">' +
+    '<span class="tag-add-wrap"><input type="text" class="caption-input tag-add-input" placeholder="tag name"></span>' +
     '<button type="button" class="secondary small tag-add-save">Add</button>' +
     '<button type="button" class="secondary small tag-add-cancel">Cancel</button>';
   const input = container.querySelector('.tag-add-input');
   input.focus();
+  attachTagAutocomplete(input, allKnownTags, { multi: false });
   container.querySelector('.tag-add-save').onclick = () => addTag(key, input.value);
   container.querySelector('.tag-add-cancel').onclick = () => load();
   input.onkeydown = (e) => {
@@ -1638,6 +1739,19 @@ export default {
 
     if (request.method === 'GET' && pathname === '/gallery') {
       return new Response(GALLERY_PAGE, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+    }
+
+    if (request.method === 'GET' && pathname === '/admin/tags') {
+      if (!checkToken(request, env)) {
+        return Response.json({ error: 'unauthorized' }, { status: 401 });
+      }
+      const objects = await listAllObjects(env.SHARE_R2);
+      const tagSet = new Set();
+      objects.forEach((o) => {
+        const cm = o.customMetadata || {};
+        if (cm.tags) cm.tags.split(',').forEach((t) => { if (t) tagSet.add(t); });
+      });
+      return Response.json({ tags: [...tagSet].sort() });
     }
 
     if (request.method === 'GET' && pathname === '/admin/list') {
