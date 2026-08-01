@@ -96,7 +96,6 @@ const STYLE = `
   #banner { display: none; margin-bottom: 16px; padding: 10px 14px; border-radius: 10px; font-size: 13px; }
   #banner.error { display: block; background: #ffebe9; color: #cf222e; }
   img.preview { max-width: 100%; border-radius: 10px; display: block; margin-bottom: 6px; }
-  a.footer-link { color: #86868b; font-size: 13px; }
   #toolbar { display: flex; align-items: center; gap: 10px; margin: 20px 0; }
   #toolbar label { display: flex; align-items: center; gap: 6px; font-size: 13px; }
   #bulkDelete { margin-left: auto; background: #ff3b30; }
@@ -358,6 +357,18 @@ function renderTypeChips(container, activeType, onSelect) {
 }
 `;
 
+function navPill(href, label) {
+  const style = 'display:inline-flex;align-items:center;gap:4px;padding:8px 16px;margin:4px 8px 4px 0;' +
+    'background:#0071e3;color:#fff;border-radius:20px;font-size:13px;font-weight:600;text-decoration:none;' +
+    'box-shadow:0 2px 8px rgba(0,113,227,0.28);transition:background .15s ease,transform .15s ease;';
+  return '<a href="' + href + '" style="' + style + '" ' +
+    'onmouseover="this.style.background=\'#0077ed\';this.style.transform=\'translateY(-1px)\'" ' +
+    'onmouseout="this.style.background=\'#0071e3\';this.style.transform=\'none\'">' + label + '</a>';
+}
+function navBar(style, ...pills) {
+  return '<div style="' + style + '">' + pills.join('') + '</div>';
+}
+
 const PAGE = `<!doctype html>
 <html lang="en">
 <head>
@@ -385,7 +396,7 @@ const PAGE = `<!doctype html>
 
   <div id="list"></div>
 
-  <p class="sub" style="margin-top:40px;"><a class="footer-link" href="/admin">Admin →</a> &nbsp; <a class="footer-link" href="/gallery">Gallery →</a></p>
+  ${navBar('margin-top:40px;', navPill('/admin', 'Admin →'), navPill('/gallery', 'Gallery →'))}
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -538,7 +549,8 @@ const ADMIN_PAGE = `<!doctype html>
 </head>
 <body>
   <h1>quickshare admin</h1>
-  <p class="sub">All uploaded files. <a class="footer-link" href="/gallery">Gallery →</a></p>
+  <p class="sub">All uploaded files.</p>
+  ${navBar('margin-top:12px;', navPill('/', 'Upload →'), navPill('/gallery', 'Gallery →'))}
 
   <div id="banner"></div>
 
@@ -1054,7 +1066,7 @@ const GALLERY_PAGE = `<!doctype html>
 </head>
 <body class="gallery-page">
   <h1>Gallery</h1>
-  <p class="sub"><a class="footer-link" href="/">Upload →</a> &nbsp; <a class="footer-link" href="/admin">Manage →</a></p>
+  ${navBar('margin-top:8px;', navPill('/', 'Upload →'), navPill('/admin', 'Manage →'))}
 
   <div id="banner"></div>
 
