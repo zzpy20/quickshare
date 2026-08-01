@@ -324,6 +324,40 @@ async function makeThumbnail(file) {
 }
 `;
 
+const TYPE_JS = `
+const TYPE_DEFS = [
+  { key: 'all', label: 'All' },
+  { key: 'image', label: '📷 Photos & images' },
+  { key: 'pdf', label: '📄 PDFs' },
+  { key: 'video', label: '🎬 Videos' },
+  { key: 'audio', label: '🎵 Audio' },
+  { key: 'document', label: '📝 Documents' },
+  { key: 'archive', label: '📦 Archives' },
+  { key: 'other', label: '📁 Other' },
+];
+const TYPE_TILE = { pdf: '📄', video: '🎬', audio: '🎵', document: '📝', archive: '📦', other: '📁' };
+
+function classifyType(contentType) {
+  const ct = (contentType || '').toLowerCase();
+  if (ct.startsWith('image/')) return 'image';
+  if (ct === 'application/pdf') return 'pdf';
+  if (ct.startsWith('video/')) return 'video';
+  if (ct.startsWith('audio/')) return 'audio';
+  if (ct.startsWith('text/') || ct.includes('word') || ct.includes('document') || ct === 'application/rtf' || ct.includes('opendocument')) return 'document';
+  if (ct.includes('zip') || ct.includes('tar') || ct.includes('rar') || ct.includes('7z') || ct.includes('gzip')) return 'archive';
+  return 'other';
+}
+
+function renderTypeChips(container, activeType, onSelect) {
+  container.innerHTML = TYPE_DEFS.map((t) =>
+    '<button type="button" class="type-chip' + (activeType === t.key ? ' active' : '') + '" data-type="' + t.key + '">' + t.label + '</button>'
+  ).join('');
+  container.querySelectorAll('.type-chip').forEach((btn) => {
+    btn.onclick = () => onSelect(btn.dataset.type);
+  });
+}
+`;
+
 const PAGE = `<!doctype html>
 <html lang="en">
 <head>
@@ -512,6 +546,8 @@ const ADMIN_PAGE = `<!doctype html>
 
   <input type="search" id="searchBox" placeholder="Search filenames and captions…">
 
+  <div id="typeFilters"></div>
+
   <div id="tagFilters"></div>
 
   <div id="toolbar">
@@ -548,6 +584,7 @@ const $ = (id) => document.getElementById(id);
 const banner = $('banner'), groupsEl = $('groups'), bulkBtn = $('bulkDelete'), selectAllBox = $('selectAll');
 const searchBox = $('searchBox'), paginationEl = $('pagination'), resultsSummary = $('resultsSummary');
 const tagFiltersEl = $('tagFilters');
+const typeFiltersEl = $('typeFilters');
 const lightbox = $('lightbox'), lightboxImg = $('lightboxImg');
 
 function showBanner(msg, isError) {
@@ -559,15 +596,21 @@ function showBanner(msg, isError) {
 ${AUTH_JS}
 ${LIGHTBOX_JS}
 ${THUMBNAIL_JS}
+${TYPE_JS}
 
 let allFiles = [];
 let batchIds = [];
 let pendingByKey = {};
 let searchTerm = '';
 let activeTag = null;
+let activeType = 'all';
 let currentPage = 1;
 const PAGE_SIZE = 20;
 const selected = new Set();
+
+function renderTypeFilters() {
+  renderTypeChips(typeFiltersEl, activeType, (type) => { activeType = type; currentPage = 1; render(); });
+}
 
 function renderTagFilters() {
   const tagSet = new Set();
@@ -628,14 +671,15 @@ function fileMatchesFilters(f) {
     f.name.toLowerCase().includes(searchTerm) ||
     (f.caption && f.caption.toLowerCase().includes(searchTerm));
   const matchesTag = !activeTag || (f.tags || []).includes(activeTag);
-  return matchesSearch && matchesTag;
+  const matchesType = activeType === 'all' || classifyType(f.contentType) === activeType;
+  return matchesSearch && matchesTag && matchesType;
 }
 
 function computeView() {
   const byId = {};
   allFiles.forEach((f) => { (byId[f.id] = byId[f.id] || []).push(f); });
 
-  const hasFilter = !!searchTerm || !!activeTag;
+  const hasFilter = !!searchTerm || !!activeTag || activeType !== 'all';
   const displayById = {};
   Object.keys(byId).forEach((id) => {
     displayById[id] = hasFilter ? byId[id].filter(fileMatchesFilters) : byId[id];
@@ -664,6 +708,7 @@ function computeView() {
 }
 
 function render() {
+  renderTypeFilters();
   renderTagFilters();
   updateBackfillButton();
 
@@ -680,6 +725,7 @@ function render() {
   const filterLabel = [
     searchTerm ? '"' + searchBox.value.trim() + '"' : null,
     activeTag ? 'tag "' + activeTag + '"' : null,
+    activeType !== 'all' ? (TYPE_DEFS.find((t) => t.key === activeType) || {}).label : null,
   ].filter(Boolean).join(' + ');
   resultsSummary.textContent = filterLabel
     ? totalFileCount + ' file(s) match ' + filterLabel
@@ -1050,40 +1096,13 @@ function showBanner(msg, isError) {
 
 ${AUTH_JS}
 ${LIGHTBOX_JS}
+${TYPE_JS}
 
 let allFiles = [];
 let activeType = 'all';
 
-const TYPE_DEFS = [
-  { key: 'all', label: 'All' },
-  { key: 'image', label: '📷 Photos & images' },
-  { key: 'pdf', label: '📄 PDFs' },
-  { key: 'video', label: '🎬 Videos' },
-  { key: 'audio', label: '🎵 Audio' },
-  { key: 'document', label: '📝 Documents' },
-  { key: 'archive', label: '📦 Archives' },
-  { key: 'other', label: '📁 Other' },
-];
-const TYPE_TILE = { pdf: '📄', video: '🎬', audio: '🎵', document: '📝', archive: '📦', other: '📁' };
-
-function classifyType(contentType) {
-  const ct = (contentType || '').toLowerCase();
-  if (ct.startsWith('image/')) return 'image';
-  if (ct === 'application/pdf') return 'pdf';
-  if (ct.startsWith('video/')) return 'video';
-  if (ct.startsWith('audio/')) return 'audio';
-  if (ct.startsWith('text/') || ct.includes('word') || ct.includes('document') || ct === 'application/rtf' || ct.includes('opendocument')) return 'document';
-  if (ct.includes('zip') || ct.includes('tar') || ct.includes('rar') || ct.includes('7z') || ct.includes('gzip')) return 'archive';
-  return 'other';
-}
-
 function renderTypeFilters() {
-  typeFiltersEl.innerHTML = TYPE_DEFS.map((t) =>
-    '<button type="button" class="type-chip' + (activeType === t.key ? ' active' : '') + '" data-type="' + t.key + '">' + t.label + '</button>'
-  ).join('');
-  typeFiltersEl.querySelectorAll('.type-chip').forEach((btn) => {
-    btn.onclick = () => { activeType = btn.dataset.type; render(); };
-  });
+  renderTypeChips(typeFiltersEl, activeType, (type) => { activeType = type; render(); });
 }
 
 function fmtDayHeader(dateStr) {
