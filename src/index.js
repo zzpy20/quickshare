@@ -1546,7 +1546,7 @@ export default {
         ? [...new Set(tagsRaw.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean))]
         : [];
       const caption = typeof captionRaw === 'string' ? captionRaw.trim().slice(0, 500) : '';
-      const customMetadata = {};
+      const customMetadata = { createdAt: new Date().toISOString() };
       if (tags.length) customMetadata.tags = tags.join(',');
       if (caption) customMetadata.caption = caption;
 
@@ -1632,7 +1632,7 @@ export default {
             id,
             name,
             size: o.size,
-            uploaded: o.uploaded,
+            uploaded: cm.createdAt || o.uploaded,
             contentType: o.httpMetadata && o.httpMetadata.contentType,
             url: '/f/' + id + '/' + encodeURIComponent(name),
             thumbUrl: hasThumb ? '/f/' + id + '/_thumb/' + encodeURIComponent(name) : null,
@@ -1676,9 +1676,12 @@ export default {
       const newId = randomId();
       const newKey = newId + '/' + name;
 
+      const cm = Object.assign({}, object.customMetadata);
+      if (!cm.createdAt) cm.createdAt = object.uploaded.toISOString();
+
       await env.SHARE_R2.put(newKey, object.body, {
         httpMetadata: object.httpMetadata,
-        customMetadata: object.customMetadata,
+        customMetadata: cm,
       });
 
       const thumbObj = await env.SHARE_R2.get(thumbKeyFor(key));
@@ -1707,6 +1710,7 @@ export default {
 
       const target = String(tag).trim().toLowerCase();
       const cm = Object.assign({}, object.customMetadata);
+      if (!cm.createdAt) cm.createdAt = object.uploaded.toISOString();
       const tags = cm.tags ? cm.tags.split(',').filter((t) => t && t !== target) : [];
       if (tags.length) cm.tags = tags.join(',');
       else delete cm.tags;
@@ -1731,6 +1735,7 @@ export default {
 
       const trimmed = typeof caption === 'string' ? caption.trim().slice(0, 500) : '';
       const cm = Object.assign({}, object.customMetadata);
+      if (!cm.createdAt) cm.createdAt = object.uploaded.toISOString();
       if (trimmed) cm.caption = trimmed;
       else delete cm.caption;
 
@@ -1756,6 +1761,7 @@ export default {
       if (!object) return Response.json({ error: 'not found' }, { status: 404 });
 
       const cm = Object.assign({}, object.customMetadata);
+      if (!cm.createdAt) cm.createdAt = object.uploaded.toISOString();
       const tags = cm.tags ? cm.tags.split(',').filter(Boolean) : [];
       if (!tags.includes(target)) tags.push(target);
       cm.tags = tags.join(',');
