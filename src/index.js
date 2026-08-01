@@ -16,7 +16,7 @@ const STYLE = `
   @media (prefers-color-scheme: dark) {
     body { background: #1c1c1e; color: #f5f5f7; }
     #drop { border-color: #48484a !important; background: #2c2c2e !important; }
-    input[type=password], input[type=search], input.meta-input { background: #2c2c2e; color: #f5f5f7; border-color: #48484a; }
+    input[type=password], input[type=search], .meta-input { background: #2c2c2e; color: #f5f5f7; border-color: #48484a; }
     .row { background: #2c2c2e !important; }
     .row.batch { background: #1c2e42 !important; }
     .field-label { color: #f5f5f7; }
@@ -25,10 +25,11 @@ const STYLE = `
   h1 { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
   p.sub { color: #86868b; margin-top: 0; font-size: 14px; }
   #auth { display: flex; gap: 8px; margin: 20px 0; }
-  input[type=password], input[type=search], input.meta-input {
+  input[type=password], input[type=search], .meta-input {
     flex: 1; padding: 10px 12px; border-radius: 10px; border: 1px solid #d2d2d7;
     font-size: 14px; width: 100%;
   }
+  textarea.meta-input { font-family: inherit; resize: vertical; min-height: 44px; }
   #searchBox { margin: 20px 0 0; }
   .field-label { display: block; font-size: 13px; font-weight: 500; margin: 16px 0 6px; }
   #tagFilters { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 0; }
@@ -47,7 +48,7 @@ const STYLE = `
   }
   .file-tag button.tag-remove:hover { opacity: 1; background: none; }
   .file-row .caption { width: 100%; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-  .file-row .caption .caption-text { font-style: italic; }
+  .file-row .caption .caption-text { font-style: italic; white-space: pre-line; }
   button.small-icon-btn {
     background: none; border: none; padding: 0 2px; color: inherit; font-size: 12px;
     opacity: 0.55; cursor: pointer;
@@ -58,14 +59,15 @@ const STYLE = `
     font-weight: 500; cursor: pointer;
   }
   button.caption-add-btn:hover { background: none; text-decoration: underline; }
-  input.caption-input {
+  .caption-input {
     flex: 1; min-width: 140px; padding: 6px 10px; border-radius: 8px;
-    border: 1px solid #d2d2d7; font-size: 12px;
+    border: 1px solid #d2d2d7; font-size: 12px; font-family: inherit;
   }
+  textarea.caption-input { resize: vertical; min-height: 40px; }
   .tag-add-slot { display: inline-flex; align-items: center; gap: 4px; }
   .tag-add-slot input.tag-add-input { flex: none; width: 100px; min-width: 0; }
   @media (prefers-color-scheme: dark) {
-    input.caption-input { background: #2c2c2e; color: #f5f5f7; border-color: #48484a; }
+    .caption-input { background: #2c2c2e; color: #f5f5f7; border-color: #48484a; }
   }
   button {
     padding: 10px 16px; border-radius: 10px; border: none; background: #0071e3;
@@ -126,7 +128,7 @@ const STYLE = `
     padding: 10px 16px; max-width: 90vw; text-align: center; font-size: 13px; cursor: text;
   }
   #lightboxName { font-weight: 600; word-break: break-all; user-select: text; }
-  #lightboxCaption { font-style: italic; opacity: 0.85; margin-top: 4px; user-select: text; }
+  #lightboxCaption { font-style: italic; opacity: 0.85; margin-top: 4px; user-select: text; white-space: pre-line; }
   #lightboxDate { opacity: 0.6; font-size: 12px; margin-top: 4px; }
   #lightboxCopyName { margin-top: 8px; }
   .lightbox-nav {
@@ -342,7 +344,7 @@ const PAGE = `<!doctype html>
   <input type="text" id="tagsInput" class="meta-input" placeholder="e.g. tech, read-later">
 
   <label class="field-label" for="captionInput">Caption (optional)</label>
-  <input type="text" id="captionInput" class="meta-input" placeholder="Add a note…">
+  <textarea id="captionInput" class="meta-input" placeholder="Add a note…" rows="2"></textarea>
 
   <div id="drop" style="margin-top:20px;">Drop files here, or click to choose</div>
   <input type="file" id="fileInput" multiple>
@@ -938,7 +940,7 @@ function removeTag(key, tag) {
 
 function startCaptionEdit(container, key, currentCaption) {
   container.innerHTML =
-    '<input type="text" class="caption-input" value="' + escapeHtml(currentCaption) + '" placeholder="Add a note…" maxlength="500">' +
+    '<textarea class="caption-input" placeholder="Add a note…" rows="2" maxlength="500">' + escapeHtml(currentCaption) + '</textarea>' +
     '<button type="button" class="secondary small caption-save">Save</button>' +
     '<button type="button" class="secondary small caption-cancel">Cancel</button>';
   const input = container.querySelector('.caption-input');
@@ -947,7 +949,7 @@ function startCaptionEdit(container, key, currentCaption) {
   container.querySelector('.caption-save').onclick = () => saveCaption(key, input.value);
   container.querySelector('.caption-cancel').onclick = () => load();
   input.onkeydown = (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); saveCaption(key, input.value); }
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveCaption(key, input.value); }
     if (e.key === 'Escape') load();
   };
 }
