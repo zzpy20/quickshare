@@ -66,12 +66,12 @@ const STYLE = `
   textarea.caption-input { resize: vertical; min-height: 40px; }
   .tag-add-slot { display: inline-flex; align-items: center; gap: 4px; }
   .tag-add-slot input.tag-add-input { flex: none; width: 100px; min-width: 0; }
-  .field-wrap, .tag-add-wrap { position: relative; display: inline-block; }
+  .field-wrap, .tag-add-wrap { display: inline-block; }
   .field-wrap { display: block; }
   .tag-suggest {
-    position: absolute; top: 100%; left: 0; margin-top: 4px; background: #fff;
+    position: fixed; background: #fff;
     border: 1px solid #d2d2d7; border-radius: 8px; box-shadow: 0 4px 14px rgba(0,0,0,0.14);
-    max-height: 180px; overflow-y: auto; z-index: 50; min-width: 140px;
+    max-height: 180px; overflow-y: auto; z-index: 1500; min-width: 140px;
   }
   .tag-suggest div { padding: 6px 10px; font-size: 13px; cursor: pointer; white-space: nowrap; }
   .tag-suggest div:hover, .tag-suggest div.active { background: #0071e3; color: #fff; }
@@ -403,12 +403,19 @@ function renderTypeChips(container, activeType, onSelect) {
 `;
 
 const TAG_AUTOCOMPLETE_JS = `
+let __tagSuggestBox = null;
+function getTagSuggestBox() {
+  if (!__tagSuggestBox) {
+    __tagSuggestBox = document.createElement('div');
+    __tagSuggestBox.className = 'tag-suggest';
+    __tagSuggestBox.style.display = 'none';
+    document.body.appendChild(__tagSuggestBox);
+  }
+  return __tagSuggestBox;
+}
+
 function attachTagAutocomplete(input, getTags, opts) {
   const multi = !!(opts && opts.multi);
-  const box = document.createElement('div');
-  box.className = 'tag-suggest';
-  box.style.display = 'none';
-  input.insertAdjacentElement('afterend', box);
   let items = [];
   let activeIndex = -1;
   let blurTimer = null;
@@ -423,11 +430,24 @@ function attachTagAutocomplete(input, getTags, opts) {
     return input.value.split(',').slice(0, -1).map((t) => t.trim().toLowerCase()).filter(Boolean);
   }
   function close() {
-    box.style.display = 'none';
+    const box = getTagSuggestBox();
+    if (box.__owner === input) {
+      box.style.display = 'none';
+      box.__owner = null;
+    }
     items = [];
     activeIndex = -1;
   }
+  function positionBox(box) {
+    const rect = input.getBoundingClientRect();
+    box.style.top = (rect.bottom + 4) + 'px';
+    box.style.left = rect.left + 'px';
+    box.style.minWidth = Math.max(140, rect.width) + 'px';
+  }
   function renderItems() {
+    const box = getTagSuggestBox();
+    box.__owner = input;
+    positionBox(box);
     box.innerHTML = items.map((t, i) =>
       '<div class="' + (i === activeIndex ? 'active' : '') + '" data-i="' + i + '">' + escapeHtml(t) + '</div>'
     ).join('');
@@ -1655,7 +1675,7 @@ export default {
     const { pathname } = url;
 
     if (request.method === 'GET' && pathname === '/') {
-      return new Response(PAGE, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+      return new Response(PAGE, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } });
     }
 
     if (request.method === 'POST' && pathname === '/upload') {
@@ -1734,11 +1754,11 @@ export default {
     }
 
     if (request.method === 'GET' && pathname === '/admin') {
-      return new Response(ADMIN_PAGE, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+      return new Response(ADMIN_PAGE, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } });
     }
 
     if (request.method === 'GET' && pathname === '/gallery') {
-      return new Response(GALLERY_PAGE, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+      return new Response(GALLERY_PAGE, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } });
     }
 
     if (request.method === 'GET' && pathname === '/admin/tags') {
