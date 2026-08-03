@@ -184,6 +184,8 @@ const STYLE = `
   .file-row-actions { display: flex; align-items: center; gap: 8px; row-gap: 6px; flex-wrap: wrap; margin-top: 6px; padding-left: 26px; }
   .file-row .meta { color: #86868b; font-size: 12px; flex-shrink: 0; }
   .file-row .meta.expiring { color: #ff9500; font-weight: 600; }
+  .file-row .meta.link-target { width: 100%; flex-basis: 100%; word-break: break-all; }
+  .file-row .meta.link-target a { color: #0071e3; }
   button.small { padding: 5px 10px; font-size: 12px; }
   #pagination { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 20px 0; font-size: 13px; }
   #pagination button:disabled { opacity: 0.4; cursor: default; }
@@ -372,6 +374,7 @@ const TYPE_JS = `
 const TYPE_DEFS = [
   { key: 'all', label: 'All' },
   { key: 'image', label: '📷 Photos & images' },
+  { key: 'link', label: '🔗 Links' },
   { key: 'pdf', label: '📄 PDFs' },
   { key: 'video', label: '🎬 Videos' },
   { key: 'audio', label: '🎵 Audio' },
@@ -379,10 +382,11 @@ const TYPE_DEFS = [
   { key: 'archive', label: '📦 Archives' },
   { key: 'other', label: '📁 Other' },
 ];
-const TYPE_TILE = { pdf: '📄', video: '🎬', audio: '🎵', document: '📝', archive: '📦', other: '📁' };
+const TYPE_TILE = { link: '🔗', pdf: '📄', video: '🎬', audio: '🎵', document: '📝', archive: '📦', other: '📁' };
 
 function classifyType(contentType) {
   const ct = (contentType || '').toLowerCase();
+  if (ct === 'text/x-quickshare-link') return 'link';
   if (ct.startsWith('image/')) return 'image';
   if (ct === 'application/pdf') return 'pdf';
   if (ct.startsWith('video/')) return 'video';
@@ -536,6 +540,12 @@ const PAGE = `<!doctype html>
   <div id="drop" style="margin-top:20px;">Drop files here, or click to choose</div>
   <input type="file" id="fileInput" multiple>
 
+  <p class="sub" style="text-align:center;margin:16px 0;">or</p>
+
+  <label class="field-label" for="linksInput">Share a link instead (one per line)</label>
+  <textarea id="linksInput" class="meta-input" placeholder="https://example.com" rows="2"></textarea>
+  <button type="button" id="shareLinkBtn" class="secondary" style="margin-top:10px;">Share link(s)</button>
+
   <div id="list"></div>
 
   ${navBar('margin-top:40px;', navPill('/admin', 'Admin →'), navPill('/gallery', 'Gallery →'))}
@@ -546,11 +556,25 @@ const PAGE = `<!doctype html>
 const $ = (id) => document.getElementById(id);
 const drop = $('drop'), fileInput = $('fileInput'), list = $('list'), banner = $('banner');
 const tagsInput = $('tagsInput'), captionInput = $('captionInput');
+const linksInput = $('linksInput'), shareLinkBtn = $('shareLinkBtn');
 
 function showBanner(msg, isError) {
   banner.textContent = msg;
   banner.className = isError ? 'error' : '';
   banner.style.display = msg ? 'block' : 'none';
+}
+
+function normalizeLinkUrl(raw) {
+  let str = (raw || '').trim();
+  if (!str) return null;
+  if (!/^https?:\\/\\//i.test(str)) str = 'https://' + str;
+  try {
+    const u = new URL(str);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+    return u.toString();
+  } catch (e) {
+    return null;
+  }
 }
 
 ${AUTH_JS}
@@ -588,6 +612,30 @@ function uploadThumbnailsInBackground(uploaded, originals) {
   });
 }
 
+function renderUploadResults(rows, uploaded, batchUrl, batchLabel) {
+  uploaded.forEach((u, i) => {
+    const row = rows[i];
+    const full = location.origin + u.url;
+    row.className = 'row';
+    row.innerHTML =
+      '<div class="name">' + escapeHtml(u.name) + '</div>' +
+      '<a href="' + escapeHtml(full) + '" target="_blank">open</a>' +
+      '<button class="secondary copy-btn" data-url="' + escapeHtml(full) + '">Copy links</button>';
+    row.querySelector('.copy-btn').onclick = (e) => copyToClipboard(e.target, e.target.dataset.url);
+  });
+  if (batchUrl) {
+    const full = location.origin + batchUrl;
+    const brow = document.createElement('div');
+    brow.className = 'row batch';
+    brow.innerHTML =
+      '<div class="name">📦 these ' + uploaded.length + ' ' + (batchLabel || 'files') + ' together</div>' +
+      '<a href="' + full + '" target="_blank">open</a>' +
+      '<button class="secondary copy-btn" data-url="' + full + '">Copy links</button>';
+    brow.querySelector('.copy-btn').onclick = (e) => copyToClipboard(e.target, e.target.dataset.url);
+    list.prepend(brow);
+  }
+}
+
 function handleFiles(files) {
   showBanner('', false);
   const arr = [...files];
@@ -617,27 +665,7 @@ function handleFiles(files) {
       return r.json();
     })
     .then(({ files: uploaded, batchUrl }) => {
-      uploaded.forEach((u, i) => {
-        const row = rows[i];
-        const full = location.origin + u.url;
-        row.className = 'row';
-        row.innerHTML =
-          '<div class="name">' + escapeHtml(u.name) + '</div>' +
-          '<a href="' + escapeHtml(full) + '" target="_blank">open</a>' +
-          '<button class="secondary copy-btn" data-url="' + escapeHtml(full) + '">Copy links</button>';
-        row.querySelector('.copy-btn').onclick = (e) => copyToClipboard(e.target, e.target.dataset.url);
-      });
-      if (batchUrl) {
-        const full = location.origin + batchUrl;
-        const brow = document.createElement('div');
-        brow.className = 'row batch';
-        brow.innerHTML =
-          '<div class="name">📦 these ' + uploaded.length + ' files together</div>' +
-          '<a href="' + full + '" target="_blank">open</a>' +
-          '<button class="secondary copy-btn" data-url="' + full + '">Copy links</button>';
-        brow.querySelector('.copy-btn').onclick = (e) => copyToClipboard(e.target, e.target.dataset.url);
-        list.prepend(brow);
-      }
+      renderUploadResults(rows, uploaded, batchUrl, 'files');
       tagsInput.value = '';
       captionInput.value = '';
       uploadThumbnailsInBackground(uploaded, arr);
@@ -649,6 +677,49 @@ function handleFiles(files) {
       });
     });
 }
+
+function handleLinks() {
+  showBanner('', false);
+  const urls = linksInput.value.split('\\n').map(normalizeLinkUrl).filter(Boolean);
+  if (!urls.length) { showBanner('Enter at least one valid link.', true); return; }
+
+  const rows = urls.map((u) => {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = '<div class="name">' + escapeHtml(u) + '</div><div class="status">Sharing…</div>';
+    list.prepend(row);
+    return row;
+  });
+
+  const fd = new FormData();
+  fd.append('links', urls.join('\\n'));
+  fd.append('tags', tagsInput.value);
+  fd.append('caption', captionInput.value);
+
+  fetch('/upload', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: fd,
+  })
+    .then(async (r) => {
+      if (r.status === 401) { showAuth(true); throw new Error('Wrong password'); }
+      if (!r.ok) throw new Error('Failed to share link');
+      return r.json();
+    })
+    .then(({ files: uploaded, batchUrl }) => {
+      renderUploadResults(rows, uploaded, batchUrl, 'links');
+      tagsInput.value = '';
+      captionInput.value = '';
+      linksInput.value = '';
+    })
+    .catch((err) => {
+      rows.forEach((row) => {
+        row.className = 'row error';
+        row.innerHTML = row.innerHTML.replace(/<div class="status">.*<\\/div>/, '<div class="status">' + err.message + '</div>');
+      });
+    });
+}
+shareLinkBtn.onclick = handleLinks;
 </script>
 </body>
 </html>`;
@@ -663,12 +734,14 @@ function batchPage(id, manifest) {
   const items = manifest
     .map((m) => {
       const url = '/f/' + id + '/' + encodeURIComponent(m.name);
+      const isLink = m.type === 'text/x-quickshare-link';
       const preview = m.type.startsWith('image/') ? '<img class="preview" src="' + url + '">' : '';
+      const nameDisplay = (isLink ? '🔗 ' : '') + escapeHtml(m.name);
       return (
         '<div class="row" style="flex-direction:column;align-items:stretch;">' +
         preview +
         '<div style="display:flex;align-items:center;gap:10px;">' +
-        '<div class="name">' + escapeHtml(m.name) + '</div>' +
+        '<div class="name">' + nameDisplay + '</div>' +
         '<a href="' + url + '" target="_blank">open</a>' +
         '</div></div>'
       );
@@ -964,6 +1037,11 @@ function render() {
       const thumb = f.contentType && f.contentType.startsWith('image/')
         ? '<img class="thumb" loading="lazy" src="' + escapeHtml(thumbSrc) + '" data-key="' + key + '">'
         : '';
+      const isLink = f.contentType === 'text/x-quickshare-link';
+      const nameDisplay = (isLink ? '🔗 ' : '') + escapeHtml(f.name);
+      const linkMeta = isLink && f.linkTarget
+        ? '<div class="meta link-target"><a href="' + escapeHtml(f.linkTarget) + '" target="_blank" rel="noopener">' + escapeHtml(f.linkTarget) + '</a></div>'
+        : '';
       const captionInner = f.caption
         ? '<span class="caption-text">📝 ' + escapeHtml(f.caption) + '</span>' +
           '<button type="button" class="small-icon-btn caption-edit-btn" data-key="' + key + '" data-caption="' + escapeHtml(f.caption) + '" title="Edit caption">✎</button>'
@@ -980,9 +1058,10 @@ function render() {
         '<div class="file-row-top">' +
         '<input type="checkbox" class="file-check" data-key="' + key + '">' +
         thumb +
-        '<div class="name">' + escapeHtml(f.name) + '</div>' +
+        '<div class="name">' + nameDisplay + '</div>' +
         '</div>' +
         '<div class="file-row-actions">' +
+        linkMeta +
         caption +
         expiry +
         tagPills +
@@ -1386,7 +1465,7 @@ function cellHtml(f) {
       '<img loading="lazy" src="' + thumbSrc + '"></a>';
   }
   const emoji = TYPE_TILE[f.type] || '📁';
-  const ext = escapeHtml((f.name.split('.').pop() || '').slice(0, 4));
+  const ext = f.type === 'link' ? '' : escapeHtml((f.name.split('.').pop() || '').slice(0, 4));
   return '<a class="gallery-cell" href="' + safeUrl + '" target="_blank" title="' + title + '">' +
     '<div class="type-tile"><span class="emoji">' + emoji + '</span><span class="ext">' + ext + '</span></div>' +
     '<div class="cell-name">' + title + '</div></a>';
@@ -1588,6 +1667,21 @@ function dedupeFilename(used, filename) {
   return name;
 }
 
+const LINK_CONTENT_TYPE = 'text/x-quickshare-link';
+
+function normalizeLinkUrl(raw) {
+  let str = (raw || '').trim();
+  if (!str) return null;
+  if (!/^https?:\/\//i.test(str)) str = 'https://' + str;
+  try {
+    const u = new URL(str);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+    return u.toString();
+  } catch (e) {
+    return null;
+  }
+}
+
 function checkToken(request, env) {
   const token = request.headers.get('x-upload-token') || '';
   return !!env.UPLOAD_TOKEN && token === env.UPLOAD_TOKEN;
@@ -1685,8 +1779,12 @@ export default {
 
       const form = await request.formData();
       const incoming = form.getAll('file').filter((f) => typeof f !== 'string');
-      if (!incoming.length) {
-        return Response.json({ error: 'no file' }, { status: 400 });
+      const linksRaw = form.get('links');
+      const links = typeof linksRaw === 'string'
+        ? linksRaw.split('\n').map(normalizeLinkUrl).filter(Boolean)
+        : [];
+      if (!incoming.length && !links.length) {
+        return Response.json({ error: 'nothing to upload' }, { status: 400 });
       }
 
       const tagsRaw = form.get('tags');
@@ -1695,9 +1793,9 @@ export default {
         ? [...new Set(tagsRaw.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean))]
         : [];
       const caption = typeof captionRaw === 'string' ? captionRaw.trim().slice(0, 500) : '';
-      const customMetadata = { createdAt: new Date().toISOString() };
-      if (tags.length) customMetadata.tags = tags.join(',');
-      if (caption) customMetadata.caption = caption;
+      const baseMetadata = { createdAt: new Date().toISOString() };
+      if (tags.length) baseMetadata.tags = tags.join(',');
+      if (caption) baseMetadata.caption = caption;
 
       const id = randomId();
       const used = new Set(['_manifest.json']);
@@ -1709,7 +1807,7 @@ export default {
         const type = file.type || 'application/octet-stream';
         await env.SHARE_R2.put(id + '/' + name, file.stream(), {
           httpMetadata: { contentType: type },
-          customMetadata: Object.keys(customMetadata).length ? customMetadata : undefined,
+          customMetadata: baseMetadata,
         });
         manifest.push({ name, type, size: file.size });
 
@@ -1719,6 +1817,18 @@ export default {
             httpMetadata: { contentType: 'image/jpeg' },
           });
         }
+      }
+
+      for (const url of links) {
+        let host;
+        try { host = new URL(url).hostname.replace(/^www\./, ''); } catch (e) { host = 'link'; }
+        const name = dedupeFilename(used, sanitizeFilename(host || 'link'));
+        const customMetadata = Object.assign({}, baseMetadata, { linkTarget: url });
+        await env.SHARE_R2.put(id + '/' + name, url, {
+          httpMetadata: { contentType: LINK_CONTENT_TYPE },
+          customMetadata,
+        });
+        manifest.push({ name, type: LINK_CONTENT_TYPE, size: url.length });
       }
 
       if (manifest.length > 1) {
@@ -1800,6 +1910,7 @@ export default {
             thumbUrl: hasThumb ? '/f/' + id + '/_thumb/' + encodeURIComponent(name) : null,
             tags: cm.tags ? cm.tags.split(',').filter(Boolean) : [],
             caption: cm.caption || '',
+            linkTarget: cm.linkTarget || null,
           };
         });
       const batchIds = objects
@@ -1960,6 +2071,11 @@ export default {
 
       const object = await env.SHARE_R2.get(key);
       if (!object) return new Response('Not found', { status: 404 });
+
+      const linkTarget = object.customMetadata && object.customMetadata.linkTarget;
+      if (linkTarget) {
+        return Response.redirect(linkTarget, 302);
+      }
 
       const headers = new Headers();
       object.writeHttpMetadata(headers);
