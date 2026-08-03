@@ -620,7 +620,7 @@ function renderUploadResults(rows, uploaded, batchUrl, batchLabel) {
     row.innerHTML =
       '<div class="name">' + escapeHtml(u.name) + '</div>' +
       '<a href="' + escapeHtml(full) + '" target="_blank">open</a>' +
-      '<button class="secondary copy-btn" data-url="' + escapeHtml(full) + '">Copy links</button>';
+      '<button class="secondary copy-btn" data-url="' + escapeHtml(u.linkTarget || full) + '">Copy links</button>';
     row.querySelector('.copy-btn').onclick = (e) => copyToClipboard(e.target, e.target.dataset.url);
   });
   if (batchUrl) {
@@ -1083,7 +1083,7 @@ function render() {
         addTagSlot +
         '<div class="meta">' + fmtSize(f.size) + ' · ' + fmtDate(f.uploaded) + '</div>' +
         '<a href="' + escapeHtml(full) + '" target="_blank">open</a>' +
-        '<button class="secondary small copy-file" data-url="' + escapeHtml(full) + '">Copy links</button>' +
+        '<button class="secondary small copy-file" data-url="' + escapeHtml(f.linkTarget || full) + '">Copy links</button>' +
         '<button class="secondary small regen" data-key="' + key + '">Regenerate links</button>' +
         '<button class="secondary small del" data-key="' + key + '">Delete</button>' +
         '</div>' +
@@ -1107,7 +1107,7 @@ function render() {
   groupsEl.querySelectorAll('.copy-batch-all').forEach((btn) => {
     btn.onclick = (e) => {
       const groupFiles = byId[e.target.dataset.id] || [];
-      const urls = groupFiles.map((f) => location.origin + f.url).join('\\n');
+      const urls = groupFiles.map((f) => f.linkTarget || (location.origin + f.url)).join('\\n');
       copyToClipboard(e.target, urls);
     };
   });
@@ -1850,7 +1850,7 @@ export default {
           httpMetadata: { contentType: LINK_CONTENT_TYPE },
           customMetadata,
         });
-        manifest.push({ name, type: LINK_CONTENT_TYPE, size: url.length });
+        manifest.push({ name, type: LINK_CONTENT_TYPE, size: url.length, linkTarget: url });
       }
 
       if (manifest.length > 1) {
@@ -1864,6 +1864,7 @@ export default {
           name: m.name,
           key: id + '/' + m.name,
           url: '/f/' + id + '/' + encodeURIComponent(m.name),
+          linkTarget: m.linkTarget || null,
         })),
         batchUrl: manifest.length > 1 ? '/b/' + id : null,
       });
