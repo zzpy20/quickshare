@@ -1038,6 +1038,7 @@ function render() {
       ? '<div class="group-head"><span>📦 batch of ' + fullCount + shownHint + '</span>' +
         '<a href="/b/' + id + '" target="_blank">open batch</a>' +
         '<button class="secondary small copy-batch" data-url="' + location.origin + '/b/' + id + '">Copy batch link</button>' +
+        '<button class="secondary small copy-batch-all" data-id="' + id + '">Copy all links</button>' +
         '<button class="secondary small delete-batch" data-id="' + id + '">Delete batch</button></div>'
       : '<div class="group-head"><span>single file</span></div>';
 
@@ -1102,6 +1103,13 @@ function render() {
   });
   groupsEl.querySelectorAll('.copy-batch, .copy-file').forEach((btn) => {
     btn.onclick = (e) => copyToClipboard(e.target, e.target.dataset.url);
+  });
+  groupsEl.querySelectorAll('.copy-batch-all').forEach((btn) => {
+    btn.onclick = (e) => {
+      const groupFiles = byId[e.target.dataset.id] || [];
+      const urls = groupFiles.map((f) => location.origin + f.url).join('\\n');
+      copyToClipboard(e.target, urls);
+    };
   });
   groupsEl.querySelectorAll('.delete-batch').forEach((btn) => {
     btn.onclick = async (e) => {
