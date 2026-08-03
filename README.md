@@ -23,8 +23,9 @@ quickshare exists for one reason: sometimes you just need to upload a screenshot
 ### Features
 
 - **Drag-and-drop upload** — one file or many at once, from the browser
+- **Share a link instead of a file** — paste one or more URLs and get a short quickshare link for each; opening it 302-redirects straight to the target, no upload needed
 - **Instant shareable links** — each file gets a short, unguessable public URL (`/f/<id>/filename`) that needs no login to open
-- **Batch links** — drop several files together and also get one link to a page listing just that batch, isolated from anything uploaded before or after
+- **Batch links** — drop several files (or links) together and also get one link to a page listing just that batch, isolated from anything uploaded before or after
 - **Password-gated uploads, public downloads** — uploading requires a password (saved once in the browser); viewing/downloading a shared link never does
 - **Admin panel** (`/admin`) — see every upload grouped by batch, with size and upload date
   - Checkbox multi-select with bulk delete
@@ -39,6 +40,9 @@ quickshare exists for one reason: sometimes you just need to upload a screenshot
 Cloudflare Workers (JavaScript, single file) + Cloudflare R2, deployed with Wrangler. No frameworks, no build step.
 
 ### Changelog
+
+**2026-08-04**
+- Share a link (or a few) without uploading a file — a new "share a link instead" field on the upload page stores each URL as a redirect rather than file bytes, reusing the existing tags/captions/batch/admin/gallery machinery. Multiple links shared together land on the existing batch page as a simple link list. New "🔗 Links" type filter on admin and gallery.
 
 **2026-08-01**
 - Multi-line captions on both the upload page and the admin inline editor
@@ -69,8 +73,9 @@ quickshare 是一个个人文件/图片上传工具。目的很简单：有时�
 ### 功能特性
 
 - **拖拽上传** — 支持单个或同时上传多个文件
+- **只分享链接，不用上传文件** — 粘贴一个或多个网址即可生成对应的简短 quickshare 链接，打开后会直接 302 跳转到目标网址
 - **即时生成分享链接** — 每个文件都会生成一个简短、不可猜测的公开链接（`/f/<id>/文件名`），打开时无需登录
-- **批量链接** — 一次拖入多个文件时，除了各自的链接外，还会生成一个"合集"链接，展示这一批文件，与之前或之后上传的文件互不影响
+- **批量链接** — 一次拖入多个文件（或链接）时，除了各自的链接外，还会生成一个"合集"链接，展示这一批内容，与之前或之后上传的文件互不影响
 - **上传需要密码，下载无需密码** — 上传文件需要输入密码（浏览器会记住），但打开分享链接查看/下载文件完全不需要密码
 - **管理面板**（`/admin`）— 按批次查看所有已上传文件，显示大小和上传时间
   - 勾选多个文件批量删除
@@ -85,6 +90,9 @@ quickshare 是一个个人文件/图片上传工具。目的很简单：有时�
 Cloudflare Workers（JavaScript，单文件）+ Cloudflare R2，用 Wrangler 部署。没有前端框架，不需要构建步骤。
 
 ### 更新日志
+
+**2026-08-04**
+- 新增"只分享链接、不上传文件"的功能——上传页新增"改为分享链接"输入框，每个网址会作为跳转链接存储（而非文件内容），复用现有的标签/备注/批量/管理面板/相册等全部机制。一次分享多个链接时，会像批量文件一样生成一个列出所有链接的合集页面。管理面板和相册新增"🔗 链接"类型筛选。
 
 **2026-08-01**
 - 上传页和管理面板的行内编辑器，标题/备注（caption）字段支持多行输入
