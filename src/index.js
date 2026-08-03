@@ -731,9 +731,10 @@ function escapeHtml(str) {
 }
 
 function batchPage(id, manifest) {
+  const urls = manifest.map((m) => '/f/' + id + '/' + encodeURIComponent(m.name));
   const items = manifest
-    .map((m) => {
-      const url = '/f/' + id + '/' + encodeURIComponent(m.name);
+    .map((m, i) => {
+      const url = urls[i];
       const isLink = m.type === 'text/x-quickshare-link';
       const preview = m.type.startsWith('image/') ? '<img class="preview" src="' + url + '">' : '';
       const nameDisplay = (isLink ? '🔗 ' : '') + escapeHtml(m.name);
@@ -747,6 +748,9 @@ function batchPage(id, manifest) {
       );
     })
     .join('\n');
+  const openAllBtn = manifest.length > 1
+    ? '<button type="button" id="openAllBtn" class="secondary" style="margin-bottom:16px;">Open all (' + manifest.length + ')</button>'
+    : '';
 
   return `<!doctype html>
 <html lang="en">
@@ -759,7 +763,17 @@ function batchPage(id, manifest) {
 <body>
   <h1>${manifest.length} shared files</h1>
   <p class="sub">Uploaded together via quickshare.</p>
+  ${openAllBtn}
   <div id="list">${items}</div>
+<script>
+const openAllBtn = document.getElementById('openAllBtn');
+if (openAllBtn) {
+  const urls = ${JSON.stringify(urls)};
+  openAllBtn.onclick = () => {
+    urls.forEach((u) => window.open(u, '_blank'));
+  };
+}
+</script>
 </body>
 </html>`;
 }
