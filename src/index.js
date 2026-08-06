@@ -48,24 +48,7 @@ const STYLE = `
   }
   .file-tag button.tag-remove:hover { opacity: 1; background: none; }
   .file-row .caption { width: 100%; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-  .file-row .caption .caption-text {
-    font-style: italic; white-space: pre-line; cursor: pointer; border-radius: 6px;
-    padding: 2px 4px; margin: -2px -4px;
-  }
-  .file-row .caption .caption-text:hover { background: #f0f0f2; text-decoration: underline; }
-  @media (prefers-color-scheme: dark) {
-    .file-row .caption .caption-text:hover { background: #2c2c2e; }
-  }
-  button.small-icon-btn {
-    background: #f0f0f2; border: none; border-radius: 50%; width: 22px; height: 22px;
-    color: inherit; font-size: 13px; opacity: 0.75; cursor: pointer; flex-shrink: 0;
-    display: inline-flex; align-items: center; justify-content: center;
-  }
-  button.small-icon-btn:hover { opacity: 1; background: #dcdce0; }
-  @media (prefers-color-scheme: dark) {
-    button.small-icon-btn { background: #3a3a3c; }
-    button.small-icon-btn:hover { background: #48484a; }
-  }
+  .file-row .caption .caption-text { font-style: italic; white-space: pre-line; }
   button.caption-add-btn {
     background: none; border: none; padding: 0; color: #0071e3; font-size: 12px;
     font-weight: 500; cursor: pointer;
@@ -1070,8 +1053,8 @@ function render() {
         ? '<div class="meta link-target"><a href="' + escapeHtml(f.linkTarget) + '" target="_blank" rel="noopener">' + escapeHtml(f.linkTarget) + '</a></div>'
         : '';
       const captionInner = f.caption
-        ? '<span class="caption-text caption-edit-btn" data-key="' + key + '" data-caption="' + escapeHtml(f.caption) + '" title="Click to edit caption">📝 ' + escapeHtml(f.caption) + '</span>' +
-          '<button type="button" class="small-icon-btn caption-edit-btn" data-key="' + key + '" data-caption="' + escapeHtml(f.caption) + '" title="Edit caption">✎</button>'
+        ? '<span class="caption-text">📝 ' + escapeHtml(f.caption) + '</span>' +
+          '<button type="button" class="caption-add-btn caption-edit-btn" data-key="' + key + '" data-caption="' + escapeHtml(f.caption) + '" title="Edit caption">Edit</button>'
         : '<button type="button" class="caption-add-btn" data-key="' + key + '" data-caption="" title="Add caption">+ caption</button>';
       const caption = '<div class="meta caption">' + captionInner + '</div>';
       const tagPills = (f.tags || []).map((t) =>
