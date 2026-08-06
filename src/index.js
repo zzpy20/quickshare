@@ -1292,7 +1292,7 @@ function removeTag(key, tag) {
 
 function startCaptionEdit(container, key, currentCaption) {
   container.innerHTML =
-    '<textarea class="caption-input" placeholder="Add a note…" rows="2" maxlength="500">' + escapeHtml(currentCaption) + '</textarea>' +
+    '<textarea class="caption-input" placeholder="Add a note…" rows="2" maxlength="1000">' + escapeHtml(currentCaption) + '</textarea>' +
     '<button type="button" class="secondary small caption-save">Save</button>' +
     '<button type="button" class="secondary small caption-cancel">Cancel</button>';
   const input = container.querySelector('.caption-input');
@@ -1684,6 +1684,27 @@ function dedupeFilename(used, filename) {
   return name;
 }
 
+const CAPTION_MAX_CHARS = 1000;
+const CAPTION_MAX_BYTES = 1500; // stay well under R2's ~2KB total custom-metadata cap
+
+function clampCaption(raw) {
+  const str = (raw || '').trim();
+  if (!str) return '';
+  const encoder = new TextEncoder();
+  let result = '';
+  let bytes = 0;
+  let chars = 0;
+  for (const ch of str) {
+    if (chars >= CAPTION_MAX_CHARS) break;
+    const chBytes = encoder.encode(ch).length;
+    if (bytes + chBytes > CAPTION_MAX_BYTES) break;
+    result += ch;
+    bytes += chBytes;
+    chars++;
+  }
+  return result;
+}
+
 const LINK_CONTENT_TYPE = 'text/x-quickshare-link';
 
 function normalizeLinkUrl(raw) {
@@ -1809,7 +1830,7 @@ export default {
       const tags = typeof tagsRaw === 'string'
         ? [...new Set(tagsRaw.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean))]
         : [];
-      const caption = typeof captionRaw === 'string' ? captionRaw.trim().slice(0, 500) : '';
+      const caption = typeof captionRaw === 'string' ? clampCaption(captionRaw) : '';
       const baseMetadata = { createdAt: new Date().toISOString() };
       if (tags.length) baseMetadata.tags = tags.join(',');
       if (caption) baseMetadata.caption = caption;
@@ -2024,7 +2045,7 @@ export default {
       const object = await env.SHARE_R2.get(key);
       if (!object) return Response.json({ error: 'not found' }, { status: 404 });
 
-      const trimmed = typeof caption === 'string' ? caption.trim().slice(0, 500) : '';
+      const trimmed = typeof caption === 'string' ? clampCaption(caption) : '';
       const cm = Object.assign({}, object.customMetadata);
       if (!cm.createdAt) cm.createdAt = object.uploaded.toISOString();
       if (trimmed) cm.caption = trimmed;
