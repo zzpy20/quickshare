@@ -799,6 +799,7 @@ const ADMIN_PAGE = `<!doctype html>
   <div id="toolbar">
     <label><input type="checkbox" id="selectAll"> Select all on page</label>
     <button id="bulkDelete" class="secondary" style="display:none;">Delete selected</button>
+    <button id="bulkCombine" class="secondary" style="display:none;">Combine selected</button>
     <button id="backfillThumbs" class="secondary" style="display:none;">Generate missing thumbnails</button>
     <button id="refresh" class="secondary">Refresh</button>
   </div>
@@ -839,7 +840,7 @@ const ADMIN_PAGE = `<!doctype html>
 
 <script>
 const $ = (id) => document.getElementById(id);
-const banner = $('banner'), groupsEl = $('groups'), bulkBtn = $('bulkDelete'), selectAllBox = $('selectAll');
+const banner = $('banner'), groupsEl = $('groups'), bulkBtn = $('bulkDelete'), combineBtn = $('bulkCombine'), selectAllBox = $('selectAll');
 const searchBox = $('searchBox'), paginationEl = $('pagination'), resultsSummary = $('resultsSummary');
 const tagFiltersEl = $('tagFilters');
 const typeFiltersEl = $('typeFilters');
@@ -1167,6 +1168,14 @@ function updateBulkButton(visibleFiles) {
   bulkBtn.textContent = 'Delete selected (' + selected.size + ')';
   const keys = visibleFiles.map((f) => f.key);
   selectAllBox.checked = keys.length > 0 && keys.every((k) => selected.has(k));
+
+  const touchedIds = new Set([...selected].map((k) => k.slice(0, k.indexOf('/'))));
+  if (touchedIds.size >= 2) {
+    combineBtn.style.display = 'inline-block';
+    combineBtn.textContent = 'Combine selected (' + touchedIds.size + ' entries)';
+  } else {
+    combineBtn.style.display = 'none';
+  }
 }
 
 selectAllBox.onchange = () => {
@@ -1180,6 +1189,38 @@ bulkBtn.onclick = async () => {
   const ok = await confirmDialog('Delete ' + selected.size + ' file(s)? This cannot be undone.');
   if (!ok) return;
   deleteKeys([...selected]);
+};
+
+combineBtn.onclick = async () => {
+  const { byId } = computeView();
+  const touchedIds = [...new Set([...selected].map((k) => k.slice(0, k.indexOf('/'))))];
+  if (touchedIds.length < 2) return;
+
+  const oldestFirst = (a, b) => {
+    const ta = Math.min(...byId[a].map((f) => new Date(f.uploaded).getTime()));
+    const tb = Math.min(...byId[b].map((f) => new Date(f.uploaded).getTime()));
+    return ta - tb;
+  };
+  const sorted = [...touchedIds].sort(oldestFirst);
+  const targetId = sorted[0];
+  const sourceIds = sorted.slice(1);
+  const totalFiles = touchedIds.reduce((sum, id) => sum + byId[id].length, 0);
+
+  const ok = await confirmDialog(
+    'Combine ' + touchedIds.length + ' entries (' + totalFiles + ' file(s) total) into one batch? ' +
+    'Everything will be merged into the oldest entry’s link.',
+    'Combine'
+  );
+  if (!ok) return;
+
+  fetch('/admin/combine', {
+    method: 'POST',
+    headers: Object.assign({ 'content-type': 'application/json' }, authHeaders()),
+    body: JSON.stringify({ targetId, sourceIds }),
+  })
+    .then((r) => { if (!r.ok) throw new Error('Combine failed'); })
+    .then(() => { selected.clear(); load(); })
+    .catch((err) => showBanner(err.message, true));
 };
 
 searchBox.oninput = () => {
@@ -1741,6 +1782,17 @@ async function listAllObjects(bucket) {
   return objects;
 }
 
+async function listEntryFiles(bucket, id) {
+  let cursor;
+  const objects = [];
+  do {
+    const res = await bucket.list({ prefix: id + '/', cursor, limit: 1000, include: ['httpMetadata', 'customMetadata'] });
+    objects.push(...res.objects);
+    cursor = res.truncated ? res.cursor : undefined;
+  } while (cursor);
+  return objects.filter((o) => !o.key.endsWith('/_manifest.json') && !o.key.includes('/_thumb/'));
+}
+
 const GRACE_MS = 7 * 24 * 60 * 60 * 1000;
 const PENDING_KEY = '_system/pending-deletes.json';
 
@@ -1971,6 +2023,66 @@ export default {
       await env.SHARE_R2.delete(keys.map(thumbKeyFor));
       await cleanupManifests(env.SHARE_R2, keys);
       return Response.json({ ok: true });
+    }
+
+    if (request.method === 'POST' && pathname === '/admin/combine') {
+      if (!checkToken(request, env)) {
+        return Response.json({ error: 'unauthorized' }, { status: 401 });
+      }
+      const { targetId, sourceIds } = await request.json();
+      const ids = Array.isArray(sourceIds) ? [...new Set(sourceIds)].filter((id) => id && id !== targetId) : [];
+      if (!targetId || !ids.length) {
+        return Response.json({ error: 'targetId and sourceIds required' }, { status: 400 });
+      }
+
+      const targetFiles = await listEntryFiles(env.SHARE_R2, targetId);
+      const used = new Set(['_manifest.json', ...targetFiles.map((o) => o.key.slice(targetId.length + 1))]);
+      const manifest = targetFiles.map((o) => ({
+        name: o.key.slice(targetId.length + 1),
+        type: o.httpMetadata && o.httpMetadata.contentType,
+        size: o.size,
+        linkTarget: (o.customMetadata && o.customMetadata.linkTarget) || undefined,
+      }));
+
+      for (const id of ids) {
+        const sourceFiles = await listEntryFiles(env.SHARE_R2, id);
+        for (const o of sourceFiles) {
+          const object = await env.SHARE_R2.get(o.key);
+          if (!object) continue;
+
+          const oldName = o.key.slice(id.length + 1);
+          const newName = dedupeFilename(used, sanitizeFilename(oldName));
+          const newKey = targetId + '/' + newName;
+
+          await env.SHARE_R2.put(newKey, object.body, {
+            httpMetadata: object.httpMetadata,
+            customMetadata: object.customMetadata,
+          });
+
+          const thumbObj = await env.SHARE_R2.get(thumbKeyFor(o.key));
+          if (thumbObj) {
+            await env.SHARE_R2.put(thumbKeyFor(newKey), thumbObj.body, {
+              httpMetadata: thumbObj.httpMetadata,
+            });
+            await env.SHARE_R2.delete(thumbKeyFor(o.key));
+          }
+          await env.SHARE_R2.delete(o.key);
+
+          manifest.push({
+            name: newName,
+            type: object.httpMetadata && object.httpMetadata.contentType,
+            size: object.size,
+            linkTarget: (object.customMetadata && object.customMetadata.linkTarget) || undefined,
+          });
+        }
+        await env.SHARE_R2.delete(id + '/_manifest.json');
+      }
+
+      await env.SHARE_R2.put(targetId + '/_manifest.json', JSON.stringify(manifest), {
+        httpMetadata: { contentType: 'application/json' },
+      });
+
+      return Response.json({ ok: true, batchUrl: '/b/' + targetId, fileCount: manifest.length });
     }
 
     if (request.method === 'POST' && pathname === '/admin/regenerate') {
