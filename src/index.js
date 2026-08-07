@@ -835,6 +835,7 @@ const ADMIN_PAGE = `<!doctype html>
     <label><input type="checkbox" id="selectAll"> Select all on page</label>
     <button id="bulkDelete" class="secondary" style="display:none;">Delete selected</button>
     <button id="bulkCombine" class="secondary" style="display:none;">Combine selected</button>
+    <button id="bulkEmail" class="secondary" style="display:none;">Email selected</button>
     <button id="backfillThumbs" class="secondary" style="display:none;">Generate missing thumbnails</button>
     <button id="refresh" class="secondary">Refresh</button>
   </div>
@@ -875,7 +876,7 @@ const ADMIN_PAGE = `<!doctype html>
 
 <script>
 const $ = (id) => document.getElementById(id);
-const banner = $('banner'), groupsEl = $('groups'), bulkBtn = $('bulkDelete'), combineBtn = $('bulkCombine'), selectAllBox = $('selectAll');
+const banner = $('banner'), groupsEl = $('groups'), bulkBtn = $('bulkDelete'), combineBtn = $('bulkCombine'), emailBtn = $('bulkEmail'), selectAllBox = $('selectAll');
 const searchBox = $('searchBox'), paginationEl = $('pagination'), resultsSummary = $('resultsSummary');
 const tagFiltersEl = $('tagFilters');
 const typeFiltersEl = $('typeFilters');
@@ -1211,6 +1212,8 @@ function updateBulkButton(visibleFiles) {
   } else {
     combineBtn.style.display = 'none';
   }
+
+  emailBtn.style.display = touchedIds.size === 1 ? 'inline-block' : 'none';
 }
 
 selectAllBox.onchange = () => {
@@ -1255,6 +1258,24 @@ combineBtn.onclick = async () => {
   })
     .then((r) => { if (!r.ok) throw new Error('Combine failed'); })
     .then(() => { selected.clear(); load(); })
+    .catch((err) => showBanner(err.message, true));
+};
+
+emailBtn.onclick = async () => {
+  const touchedIds = [...new Set([...selected].map((k) => k.slice(0, k.indexOf('/'))))];
+  if (touchedIds.length !== 1) return;
+  const id = touchedIds[0];
+
+  const ok = await confirmDialog('Email this entry to zzpy20@gmail.com?', 'Send');
+  if (!ok) return;
+
+  fetch('/admin/email-entry', {
+    method: 'POST',
+    headers: Object.assign({ 'content-type': 'application/json' }, authHeaders()),
+    body: JSON.stringify({ id }),
+  })
+    .then((r) => { if (!r.ok) throw new Error('Email failed'); })
+    .then(() => showBanner('Emailed to zzpy20@gmail.com', false))
     .catch((err) => showBanner(err.message, true));
 };
 
@@ -1748,6 +1769,14 @@ function sanitizeFilename(name) {
   return name.replace(/[\/\\]/g, '_').slice(-150) || 'file';
 }
 
+function escapeHtmlServer(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 function dedupeFilename(used, filename) {
   let name = filename;
   let i = 2;
@@ -1849,6 +1878,31 @@ async function putPendingDeletes(bucket, list) {
   await bucket.put(PENDING_KEY, JSON.stringify(list), {
     httpMetadata: { contentType: 'application/json' },
   });
+}
+
+async function sendEntryEmail(env, origin, id, files) {
+  const isBatch = files.length > 1;
+  const link = origin + (isBatch ? '/b/' + id : ('/f/' + id + '/' + encodeURIComponent(files[0].name)));
+  const subject = 'quickshare: ' + (isBatch ? 'batch of ' + files.length + ' files' : files[0].name);
+  const fileListHtml = files.map((f) =>
+    '<li>' + escapeHtmlServer(f.name) + (f.caption ? ' — ' + escapeHtmlServer(f.caption) : '') + '</li>'
+  ).join('');
+  const html = '<p><a href="' + link + '">' + link + '</a></p><ul>' + fileListHtml + '</ul>';
+
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + env.RESEND_API_KEY,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: 'quickshare <quickshare@1000600.xyz>',
+      to: ['zzpy20@gmail.com'],
+      subject,
+      html,
+    }),
+  });
+  if (!res.ok) throw new Error('Resend API error: ' + res.status);
 }
 
 async function runCleanup(env) {
@@ -2118,6 +2172,30 @@ export default {
       });
 
       return Response.json({ ok: true, batchUrl: '/b/' + targetId, fileCount: manifest.length });
+    }
+
+    if (request.method === 'POST' && pathname === '/admin/email-entry') {
+      if (!checkToken(request, env)) {
+        return Response.json({ error: 'unauthorized' }, { status: 401 });
+      }
+      const { id } = await request.json();
+      if (!id) {
+        return Response.json({ error: 'id required' }, { status: 400 });
+      }
+      const objects = await listEntryFiles(env.SHARE_R2, id);
+      if (!objects.length) {
+        return Response.json({ error: 'entry not found' }, { status: 404 });
+      }
+      const files = objects.map((o) => ({
+        name: o.key.slice(id.length + 1),
+        caption: (o.customMetadata && o.customMetadata.caption) || '',
+      }));
+      try {
+        await sendEntryEmail(env, url.origin, id, files);
+      } catch (e) {
+        return Response.json({ error: e.message }, { status: 502 });
+      }
+      return Response.json({ ok: true });
     }
 
     if (request.method === 'POST' && pathname === '/admin/regenerate') {

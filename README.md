@@ -31,15 +31,19 @@ quickshare exists for one reason: sometimes you just need to upload a screenshot
   - Checkbox multi-select with bulk delete
   - Per-file delete and **regenerate link** (rotates a file to a fresh random link)
   - Regenerated links keep the old link alive for a **7-day grace period** before it expires, so a share you already sent doesn't break instantly
+  - Select a batch (or a single file) and click **"Email selected"** to send yourself that entry's link and file list, via Resend
   - A floating "+" button stays on screen while scrolling through a long file list
 - **Responsive layout** — usable on a phone, and widens up to 1000px on desktop/laptop screens
 - **No database** — everything lives in R2; the admin list is built by enumerating bucket objects
 
 ### Stack
 
-Cloudflare Workers (JavaScript, single file) + Cloudflare R2, deployed with Wrangler. No frameworks, no build step.
+Cloudflare Workers (JavaScript, single file) + Cloudflare R2, deployed with Wrangler, plus Resend for outbound email. No frameworks, no build step.
 
 ### Changelog
+
+**2026-08-07**
+- Admin bulk toolbar: "Email selected" sends the selected entry's link (batch or single file) and file list to yourself via Resend — the button appears exactly when the current selection touches one entry, mirroring how "Combine selected" appears once it touches two or more
 
 **2026-08-04**
 - Share a link (or a few) without uploading a file — a new "share a link instead" field on the upload page stores each URL as a redirect rather than file bytes, reusing the existing tags/captions/batch/admin/gallery machinery. Multiple links shared together land on the existing batch page as a simple link list. New "🔗 Links" type filter on admin and gallery.
@@ -81,15 +85,19 @@ quickshare 是一个个人文件/图片上传工具。目的很简单：有时�
   - 勾选多个文件批量删除
   - 单个文件删除，以及**重新生成链接**（把文件换到一个全新的随机链接上）
   - 重新生成链接后，旧链接会保留 **7 天的过渡期** 才失效，避免已经发出去的链接立刻失效
+  - 勾选一个批次（或单个文件）后点击**"Email selected"**，即可通过 Resend 把该条目的链接和文件列表发到自己邮箱
   - 悬浮的"+"按钮始终固定在屏幕上，方便在长长的文件列表中随时跳转到上传页面
 - **响应式布局** — 手机上正常显示，桌面/笔记本电脑屏幕下最宽可达 1000px
 - **无需数据库** — 所有数据都存在 R2 里，管理面板的列表是实时枚举存储桶中的对象生成的
 
 ### 技术栈
 
-Cloudflare Workers（JavaScript，单文件）+ Cloudflare R2，用 Wrangler 部署。没有前端框架，不需要构建步骤。
+Cloudflare Workers（JavaScript，单文件）+ Cloudflare R2，用 Wrangler 部署，另用 Resend 发送邮件。没有前端框架，不需要构建步骤。
 
 ### 更新日志
+
+**2026-08-07**
+- 管理面板批量工具栏新增"Email selected"：选中一个条目（批次或单个文件）后，通过 Resend 把它的链接和文件列表发送到自己邮箱——这个按钮只在当前勾选恰好命中一个条目时出现，与"Combine selected"在命中两个及以上条目时才出现的逻辑相呼应
 
 **2026-08-04**
 - 新增"只分享链接、不上传文件"的功能——上传页新增"改为分享链接"输入框，每个网址会作为跳转链接存储（而非文件内容），复用现有的标签/备注/批量/管理面板/相册等全部机制。一次分享多个链接时，会像批量文件一样生成一个列出所有链接的合集页面。管理面板和相册新增"🔗 链接"类型筛选。
