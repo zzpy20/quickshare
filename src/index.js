@@ -521,6 +521,7 @@ const PAGE = `<!doctype html>
 <body>
   <h1>quickshare</h1>
   <p class="sub">Drop files, get a link.</p>
+  ${navBar('margin-top:12px;', navPill('/admin', 'Admin →'), navPill('/gallery', 'Gallery →'))}
 
   <div id="banner"></div>
 
@@ -542,8 +543,6 @@ const PAGE = `<!doctype html>
   <button type="button" id="shareLinkBtn" class="secondary" style="margin-top:10px;">Share link(s)</button>
 
   <div id="list"></div>
-
-  ${navBar('margin-top:40px;', navPill('/admin', 'Admin →'), navPill('/gallery', 'Gallery →'))}
 
   ${SITE_FOOTER_HTML}
 
