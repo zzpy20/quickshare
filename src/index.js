@@ -571,6 +571,42 @@ function normalizeLinkUrl(raw) {
   }
 }
 
+function trimUrlPunctuation(raw) {
+  let s = raw.replace(/[.,;:!?'"\\u201d\\u2019]+$/, '');
+  while (/[)\\]}]$/.test(s)) {
+    const close = s[s.length - 1];
+    const open = close === ')' ? '(' : close === ']' ? '[' : '{';
+    const closeCount = s.split(close).length - 1;
+    const openCount = s.split(open).length - 1;
+    if (closeCount > openCount) s = s.slice(0, -1);
+    else break;
+  }
+  return s;
+}
+
+function extractUrlsFromLine(line) {
+  const trimmed = line.trim();
+  if (!trimmed) return [];
+
+  if (!/\\s/.test(trimmed)) {
+    const looksLikeUrlStart = /^(https?:\\/\\/|www\\.)/i.test(trimmed) ||
+      /^[^\\s/?#]+\\.[a-z]{2,}([/?#].*)?$/i.test(trimmed);
+    if (looksLikeUrlStart) {
+      const whole = normalizeLinkUrl(trimmed);
+      if (whole) return [whole];
+    }
+  }
+
+  const matches = line.match(/(https?:\\/\\/|www\\.)[^\\s<>"'\\u201c\\u201d\\u2018\\u2019]+/gi) || [];
+  return matches.map(trimUrlPunctuation).map(normalizeLinkUrl).filter(Boolean);
+}
+
+function extractUrls(text) {
+  const found = [];
+  (text || '').split('\\n').forEach((line) => { found.push(...extractUrlsFromLine(line)); });
+  return [...new Set(found)];
+}
+
 ${AUTH_JS}
 ${THUMBNAIL_JS}
 ${TAG_AUTOCOMPLETE_JS}
@@ -674,7 +710,7 @@ function handleFiles(files) {
 
 function handleLinks() {
   showBanner('', false);
-  const urls = linksInput.value.split('\\n').map(normalizeLinkUrl).filter(Boolean);
+  const urls = extractUrls(linksInput.value);
   if (!urls.length) { showBanner('Enter at least one valid link.', true); return; }
 
   const rows = urls.map((u) => {
