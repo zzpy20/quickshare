@@ -540,7 +540,7 @@ const PAGE = `<!doctype html>
 
   <label class="field-label" for="linksInput">Share a link instead (one per line)</label>
   <textarea id="linksInput" class="meta-input" placeholder="https://example.com" rows="2"></textarea>
-  <button type="button" id="shareLinkBtn" class="secondary" style="margin-top:10px;">Share link(s)</button>
+  <button type="button" id="shareLinkBtn" style="margin-top:10px;">Share link(s)</button>
 
   <div id="list"></div>
 
