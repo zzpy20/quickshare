@@ -9,3 +9,9 @@ routes = [
 [[r2_buckets]]
 binding = "SHARE_R2"
 bucket_name = "quickshare-files"
+
+[images]
+binding = "IMAGES"
+
+[cache]
+enabled = true

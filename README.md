@@ -33,16 +33,18 @@ quickshare exists for one reason: sometimes you just need to upload a screenshot
   - Regenerated links keep the old link alive for a **7-day grace period** before it expires, so a share you already sent doesn't break instantly
   - Select a batch (or a single file) and click **"Email selected"** to send yourself that entry's link and file list, via Resend
   - A floating "+" button stays on screen while scrolling through a long file list
+- **Thumbnails generated on demand** — image thumbnails are transformed straight from the original in R2 at request time (Cloudflare Images), not pre-generated at upload or stored as separate files
 - **Responsive layout** — usable on a phone, and widens up to 1000px on desktop/laptop screens
 - **No database** — everything lives in R2; the admin list is built by enumerating bucket objects
 
 ### Stack
 
-Cloudflare Workers (JavaScript, single file) + Cloudflare R2, deployed with Wrangler, plus Resend for outbound email. No frameworks, no build step.
+Cloudflare Workers (JavaScript, single file) + Cloudflare R2, deployed with Wrangler, plus Resend for outbound email and Cloudflare Images for on-the-fly thumbnails. No frameworks, no build step.
 
 ### Changelog
 
 **2026-08-07**
+- Thumbnails switched from client-side generation (a canvas resize on upload, stored as a companion R2 object per file) to on-demand transforms via the Cloudflare Images binding — the original in R2 is resized/re-encoded to WebP at request time, cached at the edge. Removed the client-side thumbnail generator, the "Generate missing thumbnails" backfill button, and all the copy/delete bookkeeping that kept a separate thumbnail object in sync with every delete/regenerate/combine
 - Admin bulk toolbar: "Email selected" sends the selected entry's link (batch or single file) and file list to yourself via Resend — the button appears exactly when the current selection touches one entry, mirroring how "Combine selected" appears once it touches two or more
 
 **2026-08-04**
@@ -87,16 +89,18 @@ quickshare 是一个个人文件/图片上传工具。目的很简单：有时�
   - 重新生成链接后，旧链接会保留 **7 天的过渡期** 才失效，避免已经发出去的链接立刻失效
   - 勾选一个批次（或单个文件）后点击**"Email selected"**，即可通过 Resend 把该条目的链接和文件列表发到自己邮箱
   - 悬浮的"+"按钮始终固定在屏幕上，方便在长长的文件列表中随时跳转到上传页面
+- **缩略图按需生成** — 图片缩略图在请求时由 R2 中的原图实时转换生成（Cloudflare Images），不再在上传时预先生成、也不再单独存成一个文件
 - **响应式布局** — 手机上正常显示，桌面/笔记本电脑屏幕下最宽可达 1000px
 - **无需数据库** — 所有数据都存在 R2 里，管理面板的列表是实时枚举存储桶中的对象生成的
 
 ### 技术栈
 
-Cloudflare Workers（JavaScript，单文件）+ Cloudflare R2，用 Wrangler 部署，另用 Resend 发送邮件。没有前端框架，不需要构建步骤。
+Cloudflare Workers（JavaScript，单文件）+ Cloudflare R2，用 Wrangler 部署，另用 Resend 发送邮件、用 Cloudflare Images 实时生成缩略图。没有前端框架，不需要构建步骤。
 
 ### 更新日志
 
 **2026-08-07**
+- 缩略图生成方式从"客户端生成"（上传时用 canvas 缩放，再为每个文件单独存一份 R2 缩略图对象）改为"按需实时转换"：通过 Cloudflare Images 绑定，在请求时把 R2 里的原图实时转成 WebP 缩略图，并在边缘节点缓存。移除了客户端缩略图生成逻辑、"生成缺失的缩略图"按钮，以及此前为了让缩略图对象与原文件保持同步、在删除/重新生成链接/合并批次时都要额外维护的一整套复制/删除逻辑
 - 管理面板批量工具栏新增"Email selected"：选中一个条目（批次或单个文件）后，通过 Resend 把它的链接和文件列表发送到自己邮箱——这个按钮只在当前勾选恰好命中一个条目时出现，与"Combine selected"在命中两个及以上条目时才出现的逻辑相呼应
 
 **2026-08-04**

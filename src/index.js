@@ -344,27 +344,6 @@ document.addEventListener('keydown', (e) => {
 });
 `;
 
-const THUMBNAIL_JS = `
-async function makeThumbnail(file) {
-  if (!file.type.startsWith('image/')) return null;
-  try {
-    const bitmap = await createImageBitmap(file);
-    const maxEdge = 400;
-    const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
-    const w = Math.max(1, Math.round(bitmap.width * scale));
-    const h = Math.max(1, Math.round(bitmap.height * scale));
-    const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-    canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h);
-    if (bitmap.close) bitmap.close();
-    return await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.75));
-  } catch (e) {
-    return null;
-  }
-}
-`;
-
 const TYPE_JS = `
 const TYPE_DEFS = [
   { key: 'all', label: 'All' },
@@ -608,7 +587,6 @@ function extractUrls(text) {
 }
 
 ${AUTH_JS}
-${THUMBNAIL_JS}
 ${TAG_AUTOCOMPLETE_JS}
 
 let knownTags = [];
@@ -627,20 +605,6 @@ drop.ondrop = (e) => {
   handleFiles(e.dataTransfer.files);
 };
 fileInput.onchange = () => handleFiles(fileInput.files);
-
-function uploadThumbnailsInBackground(uploaded, originals) {
-  uploaded.forEach((u, i) => {
-    const original = originals[i];
-    if (!original || !original.type.startsWith('image/')) return;
-    makeThumbnail(original).then((blob) => {
-      if (!blob) return;
-      const tfd = new FormData();
-      tfd.append('key', u.key);
-      tfd.append('thumb', blob, original.name);
-      return fetch('/admin/set-thumbnail', { method: 'POST', headers: authHeaders(), body: tfd });
-    }).catch(() => {});
-  });
-}
 
 function renderUploadResults(rows, uploaded, batchUrl, batchLabel) {
   uploaded.forEach((u, i) => {
@@ -698,7 +662,6 @@ function handleFiles(files) {
       renderUploadResults(rows, uploaded, batchUrl, 'files');
       tagsInput.value = '';
       captionInput.value = '';
-      uploadThumbnailsInBackground(uploaded, arr);
     })
     .catch((err) => {
       rows.forEach((row) => {
@@ -836,7 +799,6 @@ const ADMIN_PAGE = `<!doctype html>
     <button id="bulkDelete" class="secondary" style="display:none;">Delete selected</button>
     <button id="bulkCombine" class="secondary" style="display:none;">Combine selected</button>
     <button id="bulkEmail" class="secondary" style="display:none;">Email selected</button>
-    <button id="backfillThumbs" class="secondary" style="display:none;">Generate missing thumbnails</button>
     <button id="refresh" class="secondary">Refresh</button>
   </div>
 
@@ -913,7 +875,6 @@ function confirmDialog(message, okLabel) {
 
 ${AUTH_JS}
 ${LIGHTBOX_JS}
-${THUMBNAIL_JS}
 ${TYPE_JS}
 ${TAG_AUTOCOMPLETE_JS}
 
@@ -1033,7 +994,6 @@ function computeView() {
 function render() {
   renderTypeFilters();
   renderTagFilters();
-  updateBackfillButton();
 
   if (!allFiles.length) {
     groupsEl.innerHTML = '<p class="sub">No files yet.</p>';
@@ -1286,58 +1246,6 @@ searchBox.oninput = () => {
 };
 
 $('refresh').onclick = load;
-
-function missingThumbFiles() {
-  return allFiles.filter((f) => f.contentType && f.contentType.startsWith('image/') && !f.thumbUrl);
-}
-
-function updateBackfillButton() {
-  const btn = $('backfillThumbs');
-  const missing = missingThumbFiles();
-  if (missing.length) {
-    btn.style.display = 'inline-block';
-    btn.textContent = 'Generate ' + missing.length + ' missing thumbnail(s)';
-    btn.disabled = false;
-  } else {
-    btn.style.display = 'none';
-  }
-}
-
-async function backfillThumbnails() {
-  const missing = missingThumbFiles();
-  if (!missing.length) return;
-
-  const btn = $('backfillThumbs');
-  btn.disabled = true;
-  let done = 0;
-  showBanner('Generating thumbnails: 0/' + missing.length, false);
-
-  let next = 0;
-  async function worker() {
-    while (next < missing.length) {
-      const f = missing[next++];
-      try {
-        const resp = await fetch(location.origin + f.url);
-        const blob = await resp.blob();
-        const file = new File([blob], f.name, { type: f.contentType });
-        const thumb = await makeThumbnail(file);
-        if (thumb) {
-          const tfd = new FormData();
-          tfd.append('key', f.key);
-          tfd.append('thumb', thumb, f.name);
-          await fetch('/admin/set-thumbnail', { method: 'POST', headers: authHeaders(), body: tfd });
-        }
-      } catch (e) {}
-      done++;
-      showBanner('Generating thumbnails: ' + done + '/' + missing.length, false);
-    }
-  }
-  await Promise.all([worker(), worker(), worker()]);
-
-  showBanner('Generated ' + done + ' thumbnail(s).', false);
-  load();
-}
-$('backfillThumbs').onclick = backfillThumbnails;
 
 function deleteKeys(keys) {
   fetch('/admin/delete', {
@@ -1830,11 +1738,6 @@ function checkToken(request, env) {
   return !!env.UPLOAD_TOKEN && token === env.UPLOAD_TOKEN;
 }
 
-function thumbKeyFor(key) {
-  const slash = key.indexOf('/');
-  return key.slice(0, slash + 1) + '_thumb/' + key.slice(slash + 1);
-}
-
 async function listAllObjects(bucket) {
   let cursor;
   const objects = [];
@@ -1913,7 +1816,6 @@ async function runCleanup(env) {
   if (due.length) {
     const dueKeys = due.map((p) => p.key);
     await env.SHARE_R2.delete(dueKeys);
-    await env.SHARE_R2.delete(dueKeys.map(thumbKeyFor));
     await cleanupManifests(env.SHARE_R2, dueKeys);
   }
   await putPendingDeletes(env.SHARE_R2, remaining);
@@ -1989,13 +1891,6 @@ export default {
           customMetadata: baseMetadata,
         });
         manifest.push({ name, type, size: file.size });
-
-        const thumb = form.get('thumb_' + i);
-        if (thumb && typeof thumb !== 'string') {
-          await env.SHARE_R2.put(id + '/_thumb/' + name, thumb.stream(), {
-            httpMetadata: { contentType: 'image/jpeg' },
-          });
-        }
       }
 
       for (const url of links) {
@@ -2027,22 +1922,6 @@ export default {
       });
     }
 
-    if (request.method === 'POST' && pathname === '/admin/set-thumbnail') {
-      if (!checkToken(request, env)) {
-        return Response.json({ error: 'unauthorized' }, { status: 401 });
-      }
-      const form = await request.formData();
-      const key = form.get('key');
-      const thumb = form.get('thumb');
-      if (!key || typeof key !== 'string' || !thumb || typeof thumb === 'string') {
-        return Response.json({ error: 'missing key or thumb' }, { status: 400 });
-      }
-      await env.SHARE_R2.put(thumbKeyFor(key), thumb.stream(), {
-        httpMetadata: { contentType: 'image/jpeg' },
-      });
-      return Response.json({ ok: true });
-    }
-
     if (request.method === 'GET' && pathname === '/admin') {
       return new Response(ADMIN_PAGE, { headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } });
     }
@@ -2070,7 +1949,6 @@ export default {
       }
       ctx.waitUntil(runCleanup(env));
       const objects = await listAllObjects(env.SHARE_R2);
-      const thumbKeys = new Set(objects.filter((o) => o.key.includes('/_thumb/')).map((o) => o.key));
       const files = objects
         .filter((o) => !o.key.endsWith('/_manifest.json') && !o.key.startsWith('_system/') && !o.key.includes('/_thumb/'))
         .map((o) => {
@@ -2078,16 +1956,16 @@ export default {
           const id = o.key.slice(0, slash);
           const name = o.key.slice(slash + 1);
           const cm = o.customMetadata || {};
-          const hasThumb = thumbKeys.has(thumbKeyFor(o.key));
+          const contentType = o.httpMetadata && o.httpMetadata.contentType;
           return {
             key: o.key,
             id,
             name,
             size: o.size,
             uploaded: cm.createdAt || o.uploaded,
-            contentType: o.httpMetadata && o.httpMetadata.contentType,
+            contentType,
             url: '/f/' + id + '/' + encodeURIComponent(name),
-            thumbUrl: hasThumb ? '/f/' + id + '/_thumb/' + encodeURIComponent(name) : null,
+            thumbUrl: contentType && contentType.startsWith('image/') ? '/f/' + id + '/_thumb/' + encodeURIComponent(name) : null,
             tags: cm.tags ? cm.tags.split(',').filter(Boolean) : [],
             caption: cm.caption || '',
             linkTarget: cm.linkTarget || null,
@@ -2109,7 +1987,6 @@ export default {
         return Response.json({ error: 'no keys' }, { status: 400 });
       }
       await env.SHARE_R2.delete(keys);
-      await env.SHARE_R2.delete(keys.map(thumbKeyFor));
       await cleanupManifests(env.SHARE_R2, keys);
       return Response.json({ ok: true });
     }
@@ -2148,13 +2025,6 @@ export default {
             customMetadata: object.customMetadata,
           });
 
-          const thumbObj = await env.SHARE_R2.get(thumbKeyFor(o.key));
-          if (thumbObj) {
-            await env.SHARE_R2.put(thumbKeyFor(newKey), thumbObj.body, {
-              httpMetadata: thumbObj.httpMetadata,
-            });
-            await env.SHARE_R2.delete(thumbKeyFor(o.key));
-          }
           await env.SHARE_R2.delete(o.key);
 
           manifest.push({
@@ -2220,13 +2090,6 @@ export default {
         httpMetadata: object.httpMetadata,
         customMetadata: cm,
       });
-
-      const thumbObj = await env.SHARE_R2.get(thumbKeyFor(key));
-      if (thumbObj) {
-        await env.SHARE_R2.put(thumbKeyFor(newKey), thumbObj.body, {
-          httpMetadata: thumbObj.httpMetadata,
-        });
-      }
 
       const pending = await getPendingDeletes(env.SHARE_R2);
       pending.push({ key, deleteAt: Date.now() + GRACE_MS });
@@ -2325,6 +2188,31 @@ export default {
       const key = decodeURIComponent(pathname.slice(3));
       if (key.endsWith('/_manifest.json') || key.startsWith('_system/')) {
         return new Response('Not found', { status: 404 });
+      }
+
+      const keyParts = key.split('/');
+      if (keyParts.length === 3 && keyParts[1] === '_thumb') {
+        const originalKey = keyParts[0] + '/' + keyParts[2];
+        const original = await env.SHARE_R2.get(originalKey);
+        const ct = original && original.httpMetadata && original.httpMetadata.contentType;
+        if (!original || !ct || !ct.startsWith('image/')) {
+          return new Response('Not found', { status: 404 });
+        }
+        try {
+          const transformed = (await env.IMAGES.input(original.body)
+            .transform({ width: 400, height: 400, fit: 'scale-down' })
+            .output({ format: 'image/webp', quality: 75 })).response();
+          return new Response(transformed.body, {
+            headers: { ...Object.fromEntries(transformed.headers), 'cache-control': 'public, max-age=31536000, immutable' },
+          });
+        } catch (e) {
+          const fresh = await env.SHARE_R2.get(originalKey);
+          if (!fresh) return new Response('Not found', { status: 404 });
+          const headers = new Headers();
+          fresh.writeHttpMetadata(headers);
+          headers.set('cache-control', 'public, max-age=31536000, immutable');
+          return new Response(fresh.body, { headers });
+        }
       }
 
       const pending = await getPendingDeletes(env.SHARE_R2);
