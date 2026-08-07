@@ -1290,8 +1290,12 @@ function removeTag(key, tag) {
     headers: Object.assign({ 'content-type': 'application/json' }, authHeaders()),
     body: JSON.stringify({ key, tag }),
   })
-    .then((r) => { if (!r.ok) throw new Error('Failed to remove tag'); })
-    .then(load)
+    .then((r) => { if (!r.ok) throw new Error('Failed to remove tag'); return r.json(); })
+    .then(({ tags }) => {
+      const f = allFiles.find((f) => f.key === key);
+      if (f) f.tags = tags;
+      render();
+    })
     .catch((err) => showBanner(err.message, true));
 }
 
@@ -1304,10 +1308,10 @@ function startCaptionEdit(container, key, currentCaption) {
   input.focus();
   input.setSelectionRange(input.value.length, input.value.length);
   container.querySelector('.caption-save').onclick = () => saveCaption(key, input.value);
-  container.querySelector('.caption-cancel').onclick = () => load();
+  container.querySelector('.caption-cancel').onclick = () => render();
   input.onkeydown = (e) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveCaption(key, input.value); }
-    if (e.key === 'Escape') load();
+    if (e.key === 'Escape') render();
   };
 }
 
@@ -1317,8 +1321,12 @@ function saveCaption(key, caption) {
     headers: Object.assign({ 'content-type': 'application/json' }, authHeaders()),
     body: JSON.stringify({ key, caption }),
   })
-    .then((r) => { if (!r.ok) throw new Error('Failed to save caption'); })
-    .then(load)
+    .then((r) => { if (!r.ok) throw new Error('Failed to save caption'); return r.json(); })
+    .then(({ caption: newCaption }) => {
+      const f = allFiles.find((f) => f.key === key);
+      if (f) f.caption = newCaption;
+      render();
+    })
     .catch((err) => showBanner(err.message, true));
 }
 
@@ -1331,23 +1339,27 @@ function startTagAdd(container, key) {
   input.focus();
   attachTagAutocomplete(input, allKnownTags, { multi: false });
   container.querySelector('.tag-add-save').onclick = () => addTag(key, input.value);
-  container.querySelector('.tag-add-cancel').onclick = () => load();
+  container.querySelector('.tag-add-cancel').onclick = () => render();
   input.onkeydown = (e) => {
     if (e.key === 'Enter') { e.preventDefault(); addTag(key, input.value); }
-    if (e.key === 'Escape') load();
+    if (e.key === 'Escape') render();
   };
 }
 
 function addTag(key, tag) {
   const trimmed = tag.trim();
-  if (!trimmed) { load(); return; }
+  if (!trimmed) { render(); return; }
   fetch('/admin/add-tag', {
     method: 'POST',
     headers: Object.assign({ 'content-type': 'application/json' }, authHeaders()),
     body: JSON.stringify({ key, tag: trimmed }),
   })
-    .then((r) => { if (!r.ok) throw new Error('Failed to add tag'); })
-    .then(load)
+    .then((r) => { if (!r.ok) throw new Error('Failed to add tag'); return r.json(); })
+    .then(({ tags }) => {
+      const f = allFiles.find((f) => f.key === key);
+      if (f) f.tags = tags;
+      render();
+    })
     .catch((err) => showBanner(err.message, true));
 }
 
