@@ -2273,7 +2273,7 @@ export default {
       return;
     }
 
-    const attachments = (email.attachments || []).filter((a) => a.content && a.content.byteLength > 0);
+    const attachments = (email.attachments || []).filter((a) => a.content && a.content.byteLength > 0 && a.disposition !== 'inline');
     if (!attachments.length) return;
 
     // --- App-specific part: store like a normal /upload -----------------
