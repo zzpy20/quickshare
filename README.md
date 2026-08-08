@@ -33,15 +33,20 @@ quickshare exists for one reason: sometimes you just need to upload a screenshot
   - Regenerated links keep the old link alive for a **7-day grace period** before it expires, so a share you already sent doesn't break instantly
   - Select a batch (or a single file) and click **"Email selected"** to send yourself that entry's link and file list, via Resend
   - A floating "+" button stays on screen while scrolling through a long file list
+- **Email a file in** — attach a file to an email and send it to `share@1000600.xyz`; it's uploaded automatically (tagged `emailed in`) and you get a Resend reply with the share link. Restricted to a single allowed sender address
 - **Thumbnails generated on demand** — image thumbnails are transformed straight from the original in R2 at request time (Cloudflare Images), not pre-generated at upload or stored as separate files
 - **Responsive layout** — usable on a phone, and widens up to 1000px on desktop/laptop screens
 - **No database** — everything lives in R2; the admin list is built by enumerating bucket objects
 
 ### Stack
 
-Cloudflare Workers (JavaScript, single file) + Cloudflare R2, deployed with Wrangler, plus Resend for outbound email and Cloudflare Images for on-the-fly thumbnails. No frameworks, no build step.
+Cloudflare Workers (JavaScript) + Cloudflare R2, deployed with Wrangler, plus Resend for outbound email, Cloudflare Images for on-the-fly thumbnails, and Cloudflare Email Routing + [postal-mime](https://www.npmjs.com/package/postal-mime) for inbound email uploads. No frameworks — `postal-mime` is the app's only dependency, so `npm install` is needed once before deploying, but there's still no separate build step.
 
 ### Changelog
+
+**2026-08-08**
+- Email a file to `share@1000600.xyz` and it uploads automatically — Cloudflare Email Routing hands the message to the Worker's new `email()` handler, which checks the sender against an allowlist, parses attachments with `postal-mime`, stores them exactly like a normal upload (same batch/manifest logic when there's more than one), tags them `emailed in`, and sends back the usual Resend "here's your link" notification
+- Fixed a caching bug (again — see below): `/admin/list` and `/admin/tags` were missing explicit `no-store` headers, so Cloudflare's edge cache would occasionally serve a stale — or, worse, completely unauthenticated — copy of the file listing. This exact fix had been made once already but only existed in an uncommitted feature branch that later got discarded, silently reintroducing the bug; it's now its own dedicated commit so that can't happen again
 
 **2026-08-07**
 - Thumbnails switched from client-side generation (a canvas resize on upload, stored as a companion R2 object per file) to on-demand transforms via the Cloudflare Images binding — the original in R2 is resized/re-encoded to WebP at request time, cached at the edge. Removed the client-side thumbnail generator, the "Generate missing thumbnails" backfill button, and all the copy/delete bookkeeping that kept a separate thumbnail object in sync with every delete/regenerate/combine
@@ -89,15 +94,20 @@ quickshare 是一个个人文件/图片上传工具。目的很简单：有时�
   - 重新生成链接后，旧链接会保留 **7 天的过渡期** 才失效，避免已经发出去的链接立刻失效
   - 勾选一个批次（或单个文件）后点击**"Email selected"**，即可通过 Resend 把该条目的链接和文件列表发到自己邮箱
   - 悬浮的"+"按钮始终固定在屏幕上，方便在长长的文件列表中随时跳转到上传页面
+- **邮件上传** — 把文件当附件发到 `share@1000600.xyz` 即可自动上传（自动打上 `emailed in` 标签），随后会收到一封 Resend 回信附上分享链接。仅限一个指定的发件邮箱地址使用
 - **缩略图按需生成** — 图片缩略图在请求时由 R2 中的原图实时转换生成（Cloudflare Images），不再在上传时预先生成、也不再单独存成一个文件
 - **响应式布局** — 手机上正常显示，桌面/笔记本电脑屏幕下最宽可达 1000px
 - **无需数据库** — 所有数据都存在 R2 里，管理面板的列表是实时枚举存储桶中的对象生成的
 
 ### 技术栈
 
-Cloudflare Workers（JavaScript，单文件）+ Cloudflare R2，用 Wrangler 部署，另用 Resend 发送邮件、用 Cloudflare Images 实时生成缩略图。没有前端框架，不需要构建步骤。
+Cloudflare Workers（JavaScript）+ Cloudflare R2，用 Wrangler 部署，另用 Resend 发送邮件、Cloudflare Images 实时生成缩略图、Cloudflare Email Routing + [postal-mime](https://www.npmjs.com/package/postal-mime) 处理邮件上传。没有前端框架——`postal-mime` 是本项目唯一的依赖，部署前需要执行一次 `npm install`，但仍然不需要单独的构建步骤。
 
 ### 更新日志
+
+**2026-08-08**
+- 把文件发到 `share@1000600.xyz` 即可自动上传——Cloudflare Email Routing 把邮件转发给 Worker 新增的 `email()` 处理函数，函数会先核对发件人是否在白名单内，再用 `postal-mime` 解析附件，按照和普通上传完全相同的方式存储（多个附件时同样走批量/manifest 逻辑），打上 `emailed in` 标签，最后通过 Resend 回一封"这是你的链接"通知邮件
+- 修复了一个缓存问题（其实是"再次"修复）：`/admin/list` 和 `/admin/tags` 缺少明确的 `no-store` 响应头，导致 Cloudflare 边缘缓存偶尔会返回过期的、甚至是完全未经身份验证就能看到的文件列表副本。这个修复此前其实已经做过一次，但当时只存在于一个后来被丢弃的未提交功能分支里，导致问题在无声无息中又回来了；这次把它拆成单独一个提交，避免同样的事再发生一次
 
 **2026-08-07**
 - 缩略图生成方式从"客户端生成"（上传时用 canvas 缩放，再为每个文件单独存一份 R2 缩略图对象）改为"按需实时转换"：通过 Cloudflare Images 绑定，在请求时把 R2 里的原图实时转成 WebP 缩略图，并在边缘节点缓存。移除了客户端缩略图生成逻辑、"生成缺失的缩略图"按钮，以及此前为了让缩略图对象与原文件保持同步、在删除/重新生成链接/合并批次时都要额外维护的一整套复制/删除逻辑
