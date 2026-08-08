@@ -1944,7 +1944,7 @@ export default {
 
     if (request.method === 'GET' && pathname === '/admin/tags') {
       if (!checkToken(request, env)) {
-        return Response.json({ error: 'unauthorized' }, { status: 401 });
+        return Response.json({ error: 'unauthorized' }, { status: 401, headers: { 'cache-control': 'private, no-store' } });
       }
       const objects = await listAllObjects(env.SHARE_R2);
       const tagSet = new Set();
@@ -1952,12 +1952,12 @@ export default {
         const cm = o.customMetadata || {};
         if (cm.tags) cm.tags.split(',').forEach((t) => { if (t) tagSet.add(t); });
       });
-      return Response.json({ tags: [...tagSet].sort() });
+      return Response.json({ tags: [...tagSet].sort() }, { headers: { 'cache-control': 'private, no-store' } });
     }
 
     if (request.method === 'GET' && pathname === '/admin/list') {
       if (!checkToken(request, env)) {
-        return Response.json({ error: 'unauthorized' }, { status: 401 });
+        return Response.json({ error: 'unauthorized' }, { status: 401, headers: { 'cache-control': 'private, no-store' } });
       }
       ctx.waitUntil(runCleanup(env));
       const objects = await listAllObjects(env.SHARE_R2);
@@ -1987,7 +1987,7 @@ export default {
         .filter((o) => o.key.endsWith('/_manifest.json'))
         .map((o) => o.key.slice(0, o.key.indexOf('/')));
       const pending = await getPendingDeletes(env.SHARE_R2);
-      return Response.json({ files, batchIds, pending });
+      return Response.json({ files, batchIds, pending }, { headers: { 'cache-control': 'private, no-store' } });
     }
 
     if (request.method === 'POST' && pathname === '/admin/delete') {
