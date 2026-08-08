@@ -1,3 +1,5 @@
+import PostalMime from 'postal-mime';
+
 const STYLE = `
   :root { color-scheme: light dark; }
   *, *::before, *::after { box-sizing: border-box; }
@@ -2249,5 +2251,57 @@ export default {
     }
 
     return new Response('Not found', { status: 404 });
+  },
+
+  // --- Inbound email-to-upload -----------------------------------------
+  // Generic part (portable to other apps): validate the sender, then parse
+  // the raw MIME message into { subject, attachments }. Everything below
+  // that point is quickshare-specific (how/where an attachment is stored).
+  async email(message, env, ctx) {
+    const allowed = (env.ALLOWED_SENDER_EMAIL || '').toLowerCase();
+    const from = (message.from || '').toLowerCase();
+    if (!allowed || from !== allowed) {
+      message.setReject('Unauthorized sender');
+      return;
+    }
+
+    let email;
+    try {
+      const raw = await new Response(message.raw).arrayBuffer();
+      email = await PostalMime.parse(raw);
+    } catch (e) {
+      return;
+    }
+
+    const attachments = (email.attachments || []).filter((a) => a.content && a.content.byteLength > 0);
+    if (!attachments.length) return;
+
+    // --- App-specific part: store like a normal /upload -----------------
+    const id = randomId();
+    const used = new Set(['_manifest.json']);
+    const manifest = [];
+    const baseMetadata = { createdAt: new Date().toISOString(), tags: 'emailed in' };
+
+    for (const att of attachments) {
+      const name = dedupeFilename(used, sanitizeFilename(att.filename || 'attachment'));
+      const type = att.mimeType || 'application/octet-stream';
+      await env.SHARE_R2.put(id + '/' + name, att.content, {
+        httpMetadata: { contentType: type },
+        customMetadata: baseMetadata,
+      });
+      manifest.push({ name, type, size: att.content.byteLength });
+    }
+
+    if (manifest.length > 1) {
+      await env.SHARE_R2.put(id + '/_manifest.json', JSON.stringify(manifest), {
+        httpMetadata: { contentType: 'application/json' },
+      });
+    }
+
+    try {
+      await sendEntryEmail(env, 'https://share.1000600.xyz', id, manifest.map((m) => ({ name: m.name, caption: '' })));
+    } catch (e) {
+      // upload already succeeded even if the notification failed
+    }
   },
 };
