@@ -240,6 +240,18 @@ const STYLE = `
     box-shadow: 0 4px 14px rgba(0,0,0,0.28); z-index: 1000;
   }
   .fab:hover { background: #0077ed; }
+  .fab-top {
+    bottom: calc(88px + env(safe-area-inset-bottom));
+    background: #e8e8ed; color: #1d1d1f; font-size: 22px; font-weight: 600;
+    border: none; cursor: pointer;
+    opacity: 0; pointer-events: none; transition: opacity 0.2s;
+  }
+  .fab-top.visible { opacity: 1; pointer-events: auto; }
+  .fab-top:hover { background: #dcdce1; }
+  @media (prefers-color-scheme: dark) {
+    .fab-top { background: #3a3a3c; color: #f5f5f7; }
+    .fab-top:hover { background: #48484a; }
+  }
 
   body.gallery-page { padding-right: 56px; }
   @media (min-width: 900px) { body.gallery-page { padding-right: 64px; } }
@@ -1024,6 +1036,7 @@ const ADMIN_PAGE = `<!doctype html>
   <div id="pagination"></div>
 
   <a href="/" class="fab" title="Upload files">+</a>
+  <button type="button" id="toTopFab" class="fab fab-top" title="Back to top">↑</button>
 
   <div id="lightbox">
     <button type="button" id="lightboxPrev" class="lightbox-nav" title="Previous">‹</button>
@@ -1060,6 +1073,12 @@ const typeFiltersEl = $('typeFilters');
 const lightbox = $('lightbox'), lightboxMedia = $('lightboxMedia');
 const confirmOverlay = $('confirmOverlay'), confirmMessageEl = $('confirmMessage');
 const confirmCancelBtn = $('confirmCancel'), confirmOkBtn = $('confirmOk');
+const toTopFab = $('toTopFab');
+
+window.addEventListener('scroll', () => {
+  toTopFab.classList.toggle('visible', window.scrollY > 400);
+}, { passive: true });
+toTopFab.onclick = () => window.scrollTo({ top: 0, behavior: 'smooth' });
 
 function showBanner(msg, isError) {
   banner.textContent = msg;
