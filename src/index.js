@@ -102,6 +102,26 @@ const STYLE = `
   .row.error .status { color: #ff3b30; }
   #banner { display: none; margin-bottom: 16px; padding: 10px 14px; border-radius: 10px; font-size: 13px; }
   #banner.error { display: block; background: #ffebe9; color: #cf222e; }
+  #toast {
+    position: fixed;
+    left: 50%;
+    bottom: 28px;
+    transform: translateX(-50%) translateY(16px);
+    background: #1a7f37;
+    color: #fff;
+    padding: 12px 20px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 500;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    z-index: 1000;
+    max-width: calc(100vw - 40px);
+    text-align: center;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
   img.preview { max-width: 100%; border-radius: 10px; display: block; margin-bottom: 6px; }
   #toolbar { display: flex; align-items: center; gap: 10px; margin: 20px 0; }
   #toolbar label { display: flex; align-items: center; gap: 6px; font-size: 13px; }
@@ -505,6 +525,7 @@ const PAGE = `<!doctype html>
   ${navBar('margin-top:12px;', navPill('/admin', 'Admin →'), navPill('/gallery', 'Gallery →'))}
 
   <div id="banner"></div>
+  <div id="toast"></div>
 
   ${AUTH_BLOCK_HTML}
 
@@ -512,7 +533,7 @@ const PAGE = `<!doctype html>
   <div class="field-wrap"><input type="text" id="tagsInput" class="meta-input" placeholder="e.g. tech, read-later"></div>
 
   <label class="field-label" for="captionInput">Caption (optional)</label>
-  <textarea id="captionInput" class="meta-input" placeholder="Add a note…" rows="2"></textarea>
+  <textarea id="captionInput" class="meta-input" placeholder="Add a note…" rows="4"></textarea>
 
   <div id="drop" style="margin-top:20px;">Drop files here, or click to choose</div>
   <input type="file" id="fileInput" multiple>
@@ -529,7 +550,7 @@ const PAGE = `<!doctype html>
 
 <script>
 const $ = (id) => document.getElementById(id);
-const drop = $('drop'), fileInput = $('fileInput'), list = $('list'), banner = $('banner');
+const drop = $('drop'), fileInput = $('fileInput'), list = $('list'), banner = $('banner'), toast = $('toast');
 const tagsInput = $('tagsInput'), captionInput = $('captionInput');
 const linksInput = $('linksInput'), shareLinkBtn = $('shareLinkBtn');
 
@@ -537,6 +558,14 @@ function showBanner(msg, isError) {
   banner.textContent = msg;
   banner.className = isError ? 'error' : '';
   banner.style.display = msg ? 'block' : 'none';
+}
+
+let toastTimer = null;
+function showToast(msg) {
+  toast.textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), 3000);
 }
 
 function normalizeLinkUrl(raw) {
@@ -664,6 +693,7 @@ function handleFiles(files) {
       renderUploadResults(rows, uploaded, batchUrl, 'files');
       tagsInput.value = '';
       captionInput.value = '';
+      showToast('✓ ' + uploaded.length + ' file' + (uploaded.length === 1 ? '' : 's') + ' uploaded');
     })
     .catch((err) => {
       rows.forEach((row) => {
@@ -706,6 +736,7 @@ function handleLinks() {
       tagsInput.value = '';
       captionInput.value = '';
       linksInput.value = '';
+      showToast('✓ ' + uploaded.length + ' link' + (uploaded.length === 1 ? '' : 's') + ' saved');
     })
     .catch((err) => {
       rows.forEach((row) => {
