@@ -32,6 +32,8 @@ const STYLE = `
     font-size: 14px; width: 100%;
   }
   textarea.meta-input { font-family: inherit; resize: vertical; min-height: 44px; }
+  #pasteBox { min-height: 88px; max-height: 50vh; overflow-y: auto; cursor: text; }
+  #pasteBox:empty:before { content: attr(data-placeholder); color: #86868b; }
   #searchBox { margin: 20px 0 0; }
   .field-label { display: block; font-size: 13px; font-weight: 500; margin: 16px 0 6px; }
   #tagFilters { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 0; }
@@ -592,6 +594,12 @@ const PAGE = `<!doctype html>
   <textarea id="linksInput" class="meta-input" placeholder="https://example.com" rows="2"></textarea>
   <button type="button" id="shareLinkBtn" style="margin-top:10px;">Share link(s)</button>
 
+  <p class="sub" style="text-align:center;margin:16px 0;">or</p>
+
+  <label class="field-label" for="pasteBox">Paste formatted text</label>
+  <div id="pasteBox" class="meta-input" contenteditable="true" data-placeholder="Paste formatted text here…"></div>
+  <button type="button" id="savePasteBtn" style="margin-top:10px;">Save as page</button>
+
   <div id="list"></div>
 
   ${SITE_FOOTER_HTML}
@@ -601,6 +609,7 @@ const $ = (id) => document.getElementById(id);
 const drop = $('drop'), fileInput = $('fileInput'), list = $('list'), banner = $('banner'), toast = $('toast');
 const tagsInput = $('tagsInput'), captionInput = $('captionInput');
 const linksInput = $('linksInput'), shareLinkBtn = $('shareLinkBtn');
+const pasteBox = $('pasteBox'), savePasteBtn = $('savePasteBtn');
 
 function showBanner(msg, isError) {
   banner.textContent = msg;
@@ -794,6 +803,69 @@ function handleLinks() {
     });
 }
 shareLinkBtn.onclick = handleLinks;
+
+function derivePasteTitle(container) {
+  const heading = container.querySelector('h1, h2, h3, h4, h5, h6');
+  let title = (heading ? heading.textContent : container.textContent) || '';
+  title = title.trim().replace(/\\s+/g, ' ').slice(0, 60);
+  return title || 'pasted content';
+}
+
+function wrapAsHtmlDocument(title, bodyHtml) {
+  return '<!doctype html><html><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+    '<title>' + escapeHtml(title) + '</title>' +
+    '<style>body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;max-width:700px;margin:40px auto;padding:0 20px;line-height:1.6;color:#1d1d1f;}</style>' +
+    '</head><body>' + bodyHtml + '</body></html>';
+}
+
+function handlePastedContent() {
+  showBanner('', false);
+  const rawHtml = pasteBox.innerHTML.trim();
+  if (!rawHtml) { showBanner('Paste some formatted text first.', true); return; }
+
+  const clean = document.createElement('div');
+  clean.innerHTML = rawHtml;
+  clean.querySelectorAll('img').forEach((img) => img.remove());
+
+  const title = derivePasteTitle(clean);
+  const doc = wrapAsHtmlDocument(title, clean.innerHTML);
+  const blob = new Blob([doc], { type: 'text/html' });
+  const filename = title + '.html';
+
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.innerHTML = '<div class="name">' + escapeHtml(title) + '</div><div class="status">Saving…</div>';
+  list.prepend(row);
+
+  const fd = new FormData();
+  fd.append('file', blob, filename);
+  fd.append('tags', tagsInput.value);
+  fd.append('caption', captionInput.value);
+
+  fetch('/upload', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: fd,
+  })
+    .then(async (r) => {
+      if (r.status === 401) { showAuth(true); throw new Error('Wrong password'); }
+      if (!r.ok) throw new Error('Failed to save page');
+      return r.json();
+    })
+    .then(({ files: uploaded, batchUrl }) => {
+      renderUploadResults([row], uploaded, batchUrl, 'files');
+      tagsInput.value = '';
+      captionInput.value = '';
+      pasteBox.innerHTML = '';
+      showToast('✓ Saved as page');
+    })
+    .catch((err) => {
+      row.className = 'row error';
+      row.innerHTML = row.innerHTML.replace(/<div class="status">.*<\\/div>/, '<div class="status">' + err.message + '</div>');
+    });
+}
+savePasteBtn.onclick = handlePastedContent;
 </script>
 </body>
 </html>`;
@@ -1879,6 +1951,30 @@ async function putPendingDeletes(bucket, list) {
   });
 }
 
+const HTML_SANITIZE_REMOVE_TAGS = [
+  'script', 'iframe', 'object', 'embed', 'form', 'link', 'base', 'meta', 'noscript', 'template', 'img',
+];
+
+async function sanitizeHtml(bytes) {
+  const rewriter = new HTMLRewriter();
+  for (const tag of HTML_SANITIZE_REMOVE_TAGS) {
+    rewriter.on(tag, { element(el) { el.remove(); } });
+  }
+  rewriter.on('*', {
+    element(el) {
+      for (const [name] of [...el.attributes]) {
+        if (name.toLowerCase().startsWith('on')) el.removeAttribute(name);
+      }
+      const href = el.getAttribute('href');
+      if (href && /^\s*(javascript|data):/i.test(href)) el.removeAttribute('href');
+      const src = el.getAttribute('src');
+      if (src && /^\s*(javascript|data):/i.test(src)) el.removeAttribute('src');
+    },
+  });
+  const res = rewriter.transform(new Response(bytes, { headers: { 'content-type': 'text/html; charset=utf-8' } }));
+  return new Uint8Array(await res.arrayBuffer());
+}
+
 async function sendEntryEmail(env, origin, id, files) {
   const isBatch = files.length > 1;
   const link = origin + (isBatch ? '/b/' + id : ('/f/' + id + '/' + encodeURIComponent(files[0].name)));
@@ -1982,11 +2078,17 @@ export default {
         const file = incoming[i];
         const name = dedupeFilename(used, sanitizeFilename(file.name || 'file'));
         const type = file.type || 'application/octet-stream';
-        await env.SHARE_R2.put(id + '/' + name, file.stream(), {
+        let body = file.stream();
+        let size = file.size;
+        if (type === 'text/html') {
+          body = await sanitizeHtml(await file.arrayBuffer());
+          size = body.byteLength;
+        }
+        await env.SHARE_R2.put(id + '/' + name, body, {
           httpMetadata: { contentType: type },
           customMetadata: baseMetadata,
         });
-        manifest.push({ name, type, size: file.size });
+        manifest.push({ name, type, size });
       }
 
       for (const url of links) {
