@@ -148,7 +148,17 @@ const STYLE = `
     display: flex; flex-direction: column; align-items: center; gap: 12px;
     max-width: 100%; max-height: 100%; cursor: default;
   }
-  #lightbox img { max-width: 100%; max-height: 74vh; border-radius: 10px; display: block; }
+  #lightboxMedia img, #lightboxMedia video { max-width: 100%; max-height: 74vh; border-radius: 10px; display: block; }
+  #lightboxMedia iframe { width: min(90vw, 900px); height: 74vh; border: none; border-radius: 10px; display: block; background: #fff; }
+  #lightboxMedia audio { width: min(90vw, 480px); display: block; }
+  #lightboxMedia pre {
+    width: min(90vw, 800px); max-height: 74vh; overflow: auto; text-align: left; box-sizing: border-box;
+    background: rgba(28,28,30,0.85); color: #fff; padding: 16px; border-radius: 10px;
+    font-family: ui-monospace, monospace; font-size: 13px; white-space: pre-wrap; word-break: break-word; margin: 0;
+  }
+  #lightboxMedia .lightbox-loading { color: #fff; opacity: 0.7; font-size: 14px; padding: 40px; }
+  .thumb.type-tile-thumb { display: flex; align-items: center; justify-content: center; font-size: 20px; }
+  @media (min-width: 900px) { .thumb.type-tile-thumb { font-size: 28px; } }
   #lightboxInfo {
     background: rgba(28,28,30,0.85); color: #fff; border-radius: 10px;
     padding: 10px 16px; max-width: 90vw; text-align: center; font-size: 13px; cursor: text;
@@ -326,17 +336,55 @@ const LIGHTBOX_JS = `
 function fmtDate(iso) {
   return new Date(iso).toLocaleString();
 }
+function classifyPreviewKind(contentType) {
+  const ct = (contentType || '').toLowerCase();
+  if (ct.startsWith('image/')) return 'image';
+  if (ct === 'application/pdf') return 'pdf';
+  if (ct.startsWith('video/')) return 'video';
+  if (ct.startsWith('audio/')) return 'audio';
+  if (ct.startsWith('text/') || ['application/json', 'application/javascript', 'application/xml'].includes(ct)) return 'text';
+  return null;
+}
 let lightboxList = [];
 let lightboxIndex = -1;
+let lightboxToken = 0;
 function closeLightbox() {
   lightbox.classList.remove('open');
-  lightboxImg.src = '';
+  lightboxToken++;
+  lightboxMedia.innerHTML = '';
 }
 function showLightboxAt(i) {
   if (i < 0 || i >= lightboxList.length) return;
   lightboxIndex = i;
   const f = lightboxList[i];
-  lightboxImg.src = location.origin + f.url;
+  const myToken = ++lightboxToken;
+  const url = location.origin + f.url;
+  const kind = classifyPreviewKind(f.contentType);
+  if (kind === 'image') {
+    lightboxMedia.innerHTML = '<img alt="" src="' + escapeHtml(url) + '">';
+  } else if (kind === 'pdf') {
+    lightboxMedia.innerHTML = '<iframe src="' + escapeHtml(url) + '"></iframe>';
+  } else if (kind === 'video') {
+    lightboxMedia.innerHTML = '<video src="' + escapeHtml(url) + '" controls></video>';
+  } else if (kind === 'audio') {
+    lightboxMedia.innerHTML = '<audio src="' + escapeHtml(url) + '" controls></audio>';
+  } else if (kind === 'text') {
+    lightboxMedia.innerHTML = '<div class="lightbox-loading">Loading preview…</div>';
+    const TEXT_PREVIEW_LIMIT = 100000;
+    fetch(url).then((r) => r.text()).then((text) => {
+      if (myToken !== lightboxToken) return;
+      const pre = document.createElement('pre');
+      pre.textContent = text.length > TEXT_PREVIEW_LIMIT
+        ? text.slice(0, TEXT_PREVIEW_LIMIT) + '\\n\\n… truncated, use "open" to see the full file'
+        : text;
+      lightboxMedia.innerHTML = '';
+      lightboxMedia.appendChild(pre);
+    }).catch(() => {
+      if (myToken === lightboxToken) lightboxMedia.innerHTML = '<div class="lightbox-loading">Preview failed to load.</div>';
+    });
+  } else {
+    lightboxMedia.innerHTML = '';
+  }
   $('lightboxName').textContent = f.name || '';
   const capEl = $('lightboxCaption');
   if (f.caption) {
@@ -846,7 +894,7 @@ const ADMIN_PAGE = `<!doctype html>
   <div id="lightbox">
     <button type="button" id="lightboxPrev" class="lightbox-nav" title="Previous">‹</button>
     <div id="lightboxContent">
-      <img id="lightboxImg" alt="">
+      <div id="lightboxMedia"></div>
       <div id="lightboxInfo">
         <div id="lightboxName"></div>
         <div id="lightboxCaption" style="display:none;"></div>
@@ -875,7 +923,7 @@ const banner = $('banner'), groupsEl = $('groups'), bulkBtn = $('bulkDelete'), c
 const searchBox = $('searchBox'), paginationEl = $('pagination'), resultsSummary = $('resultsSummary');
 const tagFiltersEl = $('tagFilters');
 const typeFiltersEl = $('typeFilters');
-const lightbox = $('lightbox'), lightboxImg = $('lightboxImg');
+const lightbox = $('lightbox'), lightboxMedia = $('lightboxMedia');
 const confirmOverlay = $('confirmOverlay'), confirmMessageEl = $('confirmMessage');
 const confirmCancelBtn = $('confirmCancel'), confirmOkBtn = $('confirmOk');
 
@@ -1074,9 +1122,12 @@ function render() {
         ? '<span class="meta expiring">⏳ ' + fmtExpiry(pendingByKey[f.key]) + '</span>'
         : '';
       const thumbSrc = f.thumbUrl ? location.origin + f.thumbUrl : full;
+      const previewKind = classifyPreviewKind(f.contentType);
       const thumb = f.contentType && f.contentType.startsWith('image/')
         ? '<img class="thumb" loading="lazy" src="' + escapeHtml(thumbSrc) + '" data-key="' + key + '">'
-        : '';
+        : previewKind
+          ? '<div class="thumb type-tile-thumb" data-key="' + key + '">' + (TYPE_TILE[classifyType(f.contentType)] || '📁') + '</div>'
+          : '';
       const isLink = f.contentType === 'text/x-quickshare-link';
       const nameDisplay = (isLink ? '🔗 ' : '') + escapeHtml(f.name);
       const linkMeta = isLink && f.linkTarget
@@ -1158,9 +1209,9 @@ function render() {
   groupsEl.querySelectorAll('.thumb').forEach((img) => {
     img.onclick = (e) => {
       const { allFilteredFiles } = computeView();
-      const imagesOnly = allFilteredFiles.filter((f) => f.contentType && f.contentType.startsWith('image/'));
-      const idx = imagesOnly.findIndex((f) => f.key === e.target.dataset.key);
-      openLightbox(imagesOnly, idx);
+      const previewable = allFilteredFiles.filter((f) => classifyPreviewKind(f.contentType));
+      const idx = previewable.findIndex((f) => f.key === e.target.dataset.key);
+      openLightbox(previewable, idx);
     };
   });
   groupsEl.querySelectorAll('.tag-remove').forEach((btn) => {
@@ -1433,7 +1484,7 @@ const GALLERY_PAGE = `<!doctype html>
   <div id="lightbox">
     <button type="button" id="lightboxPrev" class="lightbox-nav" title="Previous">‹</button>
     <div id="lightboxContent">
-      <img id="lightboxImg" alt="">
+      <div id="lightboxMedia"></div>
       <div id="lightboxInfo">
         <div id="lightboxName"></div>
         <div id="lightboxCaption" style="display:none;"></div>
@@ -1450,7 +1501,7 @@ const GALLERY_PAGE = `<!doctype html>
 const $ = (id) => document.getElementById(id);
 const banner = $('banner'), galleryMain = $('galleryMain'), typeFiltersEl = $('typeFilters');
 const scrubberTrack = $('scrubberTrack');
-const lightbox = $('lightbox'), lightboxImg = $('lightboxImg');
+const lightbox = $('lightbox'), lightboxMedia = $('lightboxMedia');
 const sizeToggleEl = $('sizeToggle');
 
 function showBanner(msg, isError) {
