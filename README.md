@@ -44,6 +44,10 @@ Cloudflare Workers (JavaScript) + Cloudflare R2, deployed with Wrangler, plus Re
 
 ### Changelog
 
+**2026-08-09**
+- Upload page reorganized into tabs — "Upload files" (default), "Share links", "Save as page" — instead of three stacked sections that couldn't all fit on one screen at once. Switching tabs never loses in-progress state in another tab (staged files, a drafted link list, or pasted content all survive)
+- File uploads now stage first instead of firing immediately on drop/select: drag or pick files from as many folders as you like, review them in a list (with size and a remove button per file), then click "Upload N files" to commit. Everything staged at that moment becomes one combined batch with one shared link, matching how Links and Save-as-page already worked. A failed upload leaves the staged files in place so it can be retried without re-selecting everything
+
 **2026-08-08**
 - Email a file to `share@1000600.xyz` and it uploads automatically — Cloudflare Email Routing hands the message to the Worker's new `email()` handler, which checks the sender against an allowlist, parses attachments with `postal-mime`, stores them exactly like a normal upload (same batch/manifest logic when there's more than one), tags them `emailed in`, and sends back the usual Resend "here's your link" notification
 - Fixed a caching bug (again — see below): `/admin/list` and `/admin/tags` were missing explicit `no-store` headers, so Cloudflare's edge cache would occasionally serve a stale — or, worse, completely unauthenticated — copy of the file listing. This exact fix had been made once already but only existed in an uncommitted feature branch that later got discarded, silently reintroducing the bug; it's now its own dedicated commit so that can't happen again
@@ -105,7 +109,9 @@ Cloudflare Workers（JavaScript）+ Cloudflare R2，用 Wrangler 部署，另用
 
 ### 更新日志
 
-**2026-08-08**
+**2026-08-09**
+- 上传页改为标签页布局——"上传文件"（默认打开）、"分享链接"、"存为网页"——取代原来三段堆叠、一屏放不下的布局。切换标签页不会丢失其他标签页里正在进行的内容（暂存的文件、正在编辑的链接列表、粘贴的内容都会保留）
+- 文件上传改为先暂存、再手动提交，不再是拖入/选中后立即上传：可以从任意多个文件夹里拖入或选择文件，在列表中查看（显示大小，每个文件都有移除按钮），确认无误后点击"上传 N 个文件"一次性提交。点击那一刻暂存的所有文件会合并成一个批次、共用一个链接，与"分享链接"和"存为网页"的行为保持一致。如果上传失败，暂存的文件不会丢失，可以直接重试而不用重新选择
 - 把文件发到 `share@1000600.xyz` 即可自动上传——Cloudflare Email Routing 把邮件转发给 Worker 新增的 `email()` 处理函数，函数会先核对发件人是否在白名单内，再用 `postal-mime` 解析附件，按照和普通上传完全相同的方式存储（多个附件时同样走批量/manifest 逻辑），打上 `emailed in` 标签，最后通过 Resend 回一封"这是你的链接"通知邮件
 - 修复了一个缓存问题（其实是"再次"修复）：`/admin/list` 和 `/admin/tags` 缺少明确的 `no-store` 响应头，导致 Cloudflare 边缘缓存偶尔会返回过期的、甚至是完全未经身份验证就能看到的文件列表副本。这个修复此前其实已经做过一次，但当时只存在于一个后来被丢弃的未提交功能分支里，导致问题在无声无息中又回来了；这次把它拆成单独一个提交，避免同样的事再发生一次
 

@@ -84,6 +84,14 @@ const STYLE = `
   }
   button:hover { background: #0077ed; }
   button.secondary { background: #e8e8ed; color: #1d1d1f; }
+  #uploadTabs { display: flex; flex-wrap: wrap; gap: 8px; }
+  .upload-tab {
+    padding: 6px 14px; border-radius: 999px; background: #e8e8ed; color: #1d1d1f;
+    font-size: 13px; cursor: pointer; border: none; font-weight: 500;
+  }
+  .upload-tab.active { background: #0071e3; color: #fff; }
+  .tab-panel { display: none; margin-top: 16px; }
+  .tab-panel.active { display: block; }
   #drop {
     border: 2px dashed #d2d2d7; border-radius: 16px; padding: 72px 20px;
     text-align: center; color: #86868b; cursor: pointer; transition: border-color .15s;
@@ -91,6 +99,7 @@ const STYLE = `
   }
   #drop.hover { border-color: #0071e3; color: #0071e3; }
   #fileInput { display: none; }
+  #stagedList { margin-top: 14px; display: flex; flex-direction: column; gap: 10px; }
   #list { margin-top: 24px; display: flex; flex-direction: column; gap: 10px; }
   .row {
     display: flex; align-items: center; gap: 12px; row-gap: 10px; flex-wrap: wrap;
@@ -102,6 +111,11 @@ const STYLE = `
   .row .status { color: #86868b; flex-shrink: 0; }
   .row a { color: #0071e3; text-decoration: none; flex-shrink: 0; }
   .row.error .status { color: #ff3b30; }
+  .row .remove-staged {
+    background: none; border: none; color: #86868b; font-size: 18px; line-height: 1;
+    cursor: pointer; padding: 0 4px; flex-shrink: 0;
+  }
+  .row .remove-staged:hover { color: #ff3b30; }
   #banner { display: none; margin-bottom: 16px; padding: 10px 14px; border-radius: 10px; font-size: 13px; }
   #banner.error { display: block; background: #ffebe9; color: #cf222e; }
   #toast {
@@ -585,20 +599,30 @@ const PAGE = `<!doctype html>
   <label class="field-label" for="captionInput">Caption (optional)</label>
   <textarea id="captionInput" class="meta-input" placeholder="Add a note…" rows="4"></textarea>
 
-  <div id="drop" style="margin-top:20px;">Drop files here, or click to choose</div>
-  <input type="file" id="fileInput" multiple>
+  <div id="uploadTabs" style="margin-top:20px;">
+    <button type="button" class="upload-tab active" data-tab="files">Upload files</button>
+    <button type="button" class="upload-tab" data-tab="links">Share links</button>
+    <button type="button" class="upload-tab" data-tab="paste">Save as page</button>
+  </div>
 
-  <p class="sub" style="text-align:center;margin:16px 0;">or</p>
+  <div id="filesPanel" class="tab-panel active">
+    <div id="drop">Drop files here, or click to choose</div>
+    <input type="file" id="fileInput" multiple>
+    <div id="stagedList"></div>
+    <button type="button" id="uploadFilesBtn" style="margin-top:10px;display:none;">Upload</button>
+  </div>
 
-  <label class="field-label" for="linksInput">Share a link instead (one per line)</label>
-  <textarea id="linksInput" class="meta-input" placeholder="https://example.com" rows="2"></textarea>
-  <button type="button" id="shareLinkBtn" style="margin-top:10px;">Share link(s)</button>
+  <div id="linksPanel" class="tab-panel">
+    <label class="field-label" for="linksInput">Links (one per line)</label>
+    <textarea id="linksInput" class="meta-input" placeholder="https://example.com" rows="2"></textarea>
+    <button type="button" id="shareLinkBtn" style="margin-top:10px;">Share link(s)</button>
+  </div>
 
-  <p class="sub" style="text-align:center;margin:16px 0;">or</p>
-
-  <label class="field-label" for="pasteBox">Paste formatted text</label>
-  <div id="pasteBox" class="meta-input" contenteditable="true" data-placeholder="Paste formatted text here…"></div>
-  <button type="button" id="savePasteBtn" style="margin-top:10px;">Save as page</button>
+  <div id="pastePanel" class="tab-panel">
+    <label class="field-label" for="pasteBox">Paste formatted text</label>
+    <div id="pasteBox" class="meta-input" contenteditable="true" data-placeholder="Paste formatted text here…"></div>
+    <button type="button" id="savePasteBtn" style="margin-top:10px;">Save as page</button>
+  </div>
 
   <div id="list"></div>
 
@@ -610,6 +634,20 @@ const drop = $('drop'), fileInput = $('fileInput'), list = $('list'), banner = $
 const tagsInput = $('tagsInput'), captionInput = $('captionInput');
 const linksInput = $('linksInput'), shareLinkBtn = $('shareLinkBtn');
 const pasteBox = $('pasteBox'), savePasteBtn = $('savePasteBtn');
+const stagedList = $('stagedList'), uploadFilesBtn = $('uploadFilesBtn');
+
+function fmtSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+}
+
+const tabPanels = { files: $('filesPanel'), links: $('linksPanel'), paste: $('pastePanel') };
+function switchTab(tab) {
+  document.querySelectorAll('.upload-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+  Object.entries(tabPanels).forEach(([key, el]) => el.classList.toggle('active', key === tab));
+}
+document.querySelectorAll('.upload-tab').forEach((b) => { b.onclick = () => switchTab(b.dataset.tab); });
 
 function showBanner(msg, isError) {
   banner.textContent = msg;
@@ -684,15 +722,34 @@ fetch('/admin/tags', { headers: authHeaders() })
   .catch(() => {});
 attachTagAutocomplete(tagsInput, () => knownTags, { multi: true });
 
+let stagedFiles = [];
+function renderStagedList() {
+  stagedList.innerHTML = stagedFiles.map((f, i) =>
+    '<div class="row"><div class="name">' + escapeHtml(f.name) + '</div>' +
+    '<div class="status">' + fmtSize(f.size) + '</div>' +
+    '<button type="button" class="remove-staged" data-i="' + i + '" title="Remove">×</button></div>'
+  ).join('');
+  stagedList.querySelectorAll('.remove-staged').forEach((btn) => {
+    btn.onclick = () => { stagedFiles.splice(Number(btn.dataset.i), 1); renderStagedList(); };
+  });
+  uploadFilesBtn.style.display = stagedFiles.length ? 'inline-block' : 'none';
+  uploadFilesBtn.textContent = 'Upload ' + stagedFiles.length + ' file' + (stagedFiles.length === 1 ? '' : 's');
+}
+
+function addFiles(fileList) {
+  stagedFiles.push(...[...fileList]);
+  renderStagedList();
+}
+
 drop.onclick = () => fileInput.click();
 drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('hover'); };
 drop.ondragleave = () => drop.classList.remove('hover');
 drop.ondrop = (e) => {
   e.preventDefault();
   drop.classList.remove('hover');
-  handleFiles(e.dataTransfer.files);
+  addFiles(e.dataTransfer.files);
 };
-fileInput.onchange = () => handleFiles(fileInput.files);
+fileInput.onchange = () => { addFiles(fileInput.files); fileInput.value = ''; };
 
 function renderUploadResults(rows, uploaded, batchUrl, batchLabel) {
   uploaded.forEach((u, i) => {
@@ -718,10 +775,10 @@ function renderUploadResults(rows, uploaded, batchUrl, batchLabel) {
   }
 }
 
-function handleFiles(files) {
+function uploadStagedFiles() {
   showBanner('', false);
-  const arr = [...files];
-  if (!arr.length) return;
+  if (!stagedFiles.length) return;
+  const arr = stagedFiles;
 
   const rows = arr.map((f) => {
     const row = document.createElement('div');
@@ -736,6 +793,7 @@ function handleFiles(files) {
   fd.append('tags', tagsInput.value);
   fd.append('caption', captionInput.value);
 
+  uploadFilesBtn.disabled = true;
   fetch('/upload', {
     method: 'POST',
     headers: authHeaders(),
@@ -750,6 +808,8 @@ function handleFiles(files) {
       renderUploadResults(rows, uploaded, batchUrl, 'files');
       tagsInput.value = '';
       captionInput.value = '';
+      stagedFiles = [];
+      renderStagedList();
       showToast('✓ ' + uploaded.length + ' file' + (uploaded.length === 1 ? '' : 's') + ' uploaded');
     })
     .catch((err) => {
@@ -757,8 +817,10 @@ function handleFiles(files) {
         row.className = 'row error';
         row.innerHTML = row.innerHTML.replace(/<div class="status">.*<\\/div>/, '<div class="status">' + err.message + '</div>');
       });
-    });
+    })
+    .finally(() => { uploadFilesBtn.disabled = false; });
 }
+uploadFilesBtn.onclick = uploadStagedFiles;
 
 function handleLinks() {
   showBanner('', false);
