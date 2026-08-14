@@ -152,6 +152,8 @@ const STYLE = `
   .file-row-top { display: flex; align-items: center; gap: 10px; }
   .file-row-top input { flex-shrink: 0; }
   .file-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .highlight-check { margin-left: 10px; accent-color: #ffb800; }
+  .name-marker { background: #ffd60a; color: #1d1d1f; font-weight: 700; padding: 1px 6px; border-radius: 5px; }
   .thumb { width: 44px; height: 44px; border-radius: 8px; object-fit: cover; flex-shrink: 0; cursor: zoom-in; background: #f5f5f7; }
   @media (min-width: 900px) { .thumb { width: 72px; height: 72px; border-radius: 10px; } }
   @media (prefers-color-scheme: dark) { .thumb { background: #2c2c2e; } }
@@ -1200,7 +1202,8 @@ function computeView() {
   const hasFilter = !!searchTerm || !!activeTag || activeType !== 'all';
   const displayById = {};
   Object.keys(byId).forEach((id) => {
-    displayById[id] = hasFilter ? byId[id].filter(fileMatchesFilters) : byId[id];
+    const group = hasFilter ? byId[id].filter(fileMatchesFilters) : byId[id];
+    displayById[id] = [...group].sort((a, b) => (b.highlighted ? 1 : 0) - (a.highlighted ? 1 : 0));
   });
 
   let ids = Object.keys(byId).sort((a, b) => {
@@ -1298,11 +1301,12 @@ function render() {
       ).join('');
       const addTagSlot = '<span class="tag-add-slot"><button type="button" class="caption-add-btn add-tag-btn" data-key="' + key + '" title="Add tag">+ tag</button></span>';
       return (
-        '<div class="file-row">' +
+        '<div class="file-row' + (f.highlighted ? ' highlighted' : '') + '">' +
         '<div class="file-row-top">' +
         '<input type="checkbox" class="file-check" data-key="' + key + '">' +
+        '<input type="checkbox" class="highlight-check" data-key="' + key + '"' + (f.highlighted ? ' checked' : '') + ' title="Highlight this entry">' +
         thumb +
-        '<div class="name">' + nameDisplay + '</div>' +
+        '<div class="name">' + (f.highlighted ? '<span class="name-marker">' + nameDisplay + '</span>' : nameDisplay) + '</div>' +
         '</div>' +
         '<div class="file-row-actions">' +
         linkMeta +
@@ -1329,6 +1333,9 @@ function render() {
       if (cb.checked) selected.add(cb.dataset.key); else selected.delete(cb.dataset.key);
       updateBulkButton(visibleFiles);
     };
+  });
+  groupsEl.querySelectorAll('.highlight-check').forEach((cb) => {
+    cb.onchange = () => toggleHighlight(cb.dataset.key, cb.checked);
   });
   groupsEl.querySelectorAll('.copy-batch, .copy-file').forEach((btn) => {
     btn.onclick = (e) => copyToClipboard(e.target, e.target.dataset.url);
@@ -1519,6 +1526,21 @@ function regenerate(key, btn) {
       btn.textContent = orig;
       showBanner(err.message, true);
     });
+}
+
+function toggleHighlight(key, highlighted) {
+  fetch('/admin/set-highlight', {
+    method: 'POST',
+    headers: Object.assign({ 'content-type': 'application/json' }, authHeaders()),
+    body: JSON.stringify({ key, highlighted }),
+  })
+    .then((r) => { if (!r.ok) throw new Error('Failed to update highlight'); return r.json(); })
+    .then(({ highlighted: newHighlighted }) => {
+      const f = allFiles.find((f) => f.key === key);
+      if (f) f.highlighted = newHighlighted;
+      render();
+    })
+    .catch((err) => showBanner(err.message, true));
 }
 
 function removeTag(key, tag) {
@@ -2251,6 +2273,7 @@ export default {
             tags: cm.tags ? cm.tags.split(',').filter(Boolean) : [],
             caption: cm.caption || '',
             linkTarget: cm.linkTarget || null,
+            highlighted: cm.highlighted === '1',
           };
         });
       const batchIds = objects
@@ -2427,6 +2450,29 @@ export default {
       });
 
       return Response.json({ ok: true, caption: trimmed });
+    }
+
+    if (request.method === 'POST' && pathname === '/admin/set-highlight') {
+      if (!checkToken(request, env)) {
+        return Response.json({ error: 'unauthorized' }, { status: 401 });
+      }
+      const { key, highlighted } = await request.json();
+      if (!key) return Response.json({ error: 'no key' }, { status: 400 });
+
+      const object = await env.SHARE_R2.get(key);
+      if (!object) return Response.json({ error: 'not found' }, { status: 404 });
+
+      const cm = Object.assign({}, object.customMetadata);
+      if (!cm.createdAt) cm.createdAt = object.uploaded.toISOString();
+      if (highlighted) cm.highlighted = '1';
+      else delete cm.highlighted;
+
+      await env.SHARE_R2.put(key, object.body, {
+        httpMetadata: object.httpMetadata,
+        customMetadata: cm,
+      });
+
+      return Response.json({ ok: true, highlighted: !!highlighted });
     }
 
     if (request.method === 'POST' && pathname === '/admin/add-tag') {
