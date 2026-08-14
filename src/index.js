@@ -42,6 +42,8 @@ const STYLE = `
     font-size: 12px; cursor: pointer; border: none; font-weight: 500;
   }
   .tag-chip.active { background: #0071e3; color: #fff; }
+  #highlightFilter { margin: 8px 0 0; }
+  .highlight-filter-chip.active { background: #ffd60a !important; color: #1d1d1f !important; }
   .file-tag {
     padding: 2px 6px 2px 9px; border-radius: 999px; background: #e8e8ed; font-size: 11px;
     flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px;
@@ -1023,6 +1025,8 @@ const ADMIN_PAGE = `<!doctype html>
 
   <div id="tagFilters"></div>
 
+  <div id="highlightFilter"></div>
+
   <div id="toolbar">
     <label><input type="checkbox" id="selectAll"> Select all on page</label>
     <button id="bulkDelete" class="secondary" style="display:none;">Delete selected</button>
@@ -1072,6 +1076,7 @@ const banner = $('banner'), groupsEl = $('groups'), bulkBtn = $('bulkDelete'), c
 const searchBox = $('searchBox'), paginationEl = $('pagination'), resultsSummary = $('resultsSummary');
 const tagFiltersEl = $('tagFilters');
 const typeFiltersEl = $('typeFilters');
+const highlightFilterEl = $('highlightFilter');
 const lightbox = $('lightbox'), lightboxMedia = $('lightboxMedia');
 const confirmOverlay = $('confirmOverlay'), confirmMessageEl = $('confirmMessage');
 const confirmCancelBtn = $('confirmCancel'), confirmOkBtn = $('confirmOk');
@@ -1120,6 +1125,7 @@ let pendingByKey = {};
 let searchTerm = '';
 let activeTag = null;
 let activeType = 'all';
+let activeHighlightOnly = false;
 let currentPage = 1;
 const PAGE_SIZE = 20;
 const selected = new Set();
@@ -1149,6 +1155,16 @@ function renderTagFilters() {
   });
   const clearBtn = $('clearTag');
   if (clearBtn) clearBtn.onclick = () => { activeTag = null; currentPage = 1; render(); };
+}
+
+function renderHighlightFilter() {
+  highlightFilterEl.innerHTML =
+    '<button type="button" class="tag-chip highlight-filter-chip' + (activeHighlightOnly ? ' active' : '') + '">★ Highlighted only</button>';
+  highlightFilterEl.querySelector('.highlight-filter-chip').onclick = () => {
+    activeHighlightOnly = !activeHighlightOnly;
+    currentPage = 1;
+    render();
+  };
 }
 
 function fmtSize(bytes) {
@@ -1192,14 +1208,15 @@ function fileMatchesFilters(f) {
     (f.caption && f.caption.toLowerCase().includes(searchTerm));
   const matchesTag = !activeTag || (f.tags || []).includes(activeTag);
   const matchesType = activeType === 'all' || classifyType(f.contentType) === activeType;
-  return matchesSearch && matchesTag && matchesType;
+  const matchesHighlight = !activeHighlightOnly || f.highlighted;
+  return matchesSearch && matchesTag && matchesType && matchesHighlight;
 }
 
 function computeView() {
   const byId = {};
   allFiles.forEach((f) => { (byId[f.id] = byId[f.id] || []).push(f); });
 
-  const hasFilter = !!searchTerm || !!activeTag || activeType !== 'all';
+  const hasFilter = !!searchTerm || !!activeTag || activeType !== 'all' || activeHighlightOnly;
   const displayById = {};
   Object.keys(byId).forEach((id) => {
     const group = hasFilter ? byId[id].filter(fileMatchesFilters) : byId[id];
@@ -1231,6 +1248,7 @@ function computeView() {
 function render() {
   renderTypeFilters();
   renderTagFilters();
+  renderHighlightFilter();
 
   if (!allFiles.length) {
     groupsEl.innerHTML = '<p class="sub">No files yet.</p>';
@@ -1246,6 +1264,7 @@ function render() {
     searchTerm ? '"' + searchBox.value.trim() + '"' : null,
     activeTag ? 'tag "' + activeTag + '"' : null,
     activeType !== 'all' ? (TYPE_DEFS.find((t) => t.key === activeType) || {}).label : null,
+    activeHighlightOnly ? 'highlighted' : null,
   ].filter(Boolean).join(' + ');
   resultsSummary.textContent = filterLabel
     ? totalFileCount + ' file(s) match ' + filterLabel
