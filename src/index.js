@@ -2033,7 +2033,7 @@ async function putPendingDeletes(bucket, list) {
 }
 
 const HTML_SANITIZE_REMOVE_TAGS = [
-  'script', 'iframe', 'object', 'embed', 'form', 'link', 'base', 'meta', 'noscript', 'template', 'img',
+  'script', 'iframe', 'object', 'embed', 'form', 'link', 'base', 'meta', 'noscript', 'template',
 ];
 
 async function sanitizeHtml(bytes) {
@@ -2049,7 +2049,10 @@ async function sanitizeHtml(bytes) {
       const href = el.getAttribute('href');
       if (href && /^\s*(javascript|data):/i.test(href)) el.removeAttribute('href');
       const src = el.getAttribute('src');
-      if (src && /^\s*(javascript|data):/i.test(src)) el.removeAttribute('src');
+      // data: is safe for <img> (no script execution in that context); still block it elsewhere.
+      const isImg = el.tagName.toLowerCase() === 'img';
+      const srcPattern = isImg ? /^\s*javascript:/i : /^\s*(javascript|data):/i;
+      if (src && srcPattern.test(src)) el.removeAttribute('src');
     },
   });
   const res = rewriter.transform(new Response(bytes, { headers: { 'content-type': 'text/html; charset=utf-8' } }));
