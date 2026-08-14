@@ -154,7 +154,12 @@ const STYLE = `
   .file-row-top { display: flex; align-items: center; gap: 10px; }
   .file-row-top input { flex-shrink: 0; }
   .file-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .highlight-check { margin-left: 10px; accent-color: #ffb800; }
+  .highlight-star {
+    margin-left: 10px; flex-shrink: 0; background: none; border: none; padding: 0;
+    width: 22px; font-size: 20px; line-height: 1; color: #c7c7cc; cursor: pointer;
+  }
+  .highlight-star:hover { background: none; color: #ffd60a; }
+  .highlight-star.active { color: #ffd60a; }
   .name-marker { background: #ffd60a; color: #1d1d1f; font-weight: 700; padding: 1px 6px; border-radius: 5px; }
   .thumb { width: 44px; height: 44px; border-radius: 8px; object-fit: cover; flex-shrink: 0; cursor: zoom-in; background: #f5f5f7; }
   @media (min-width: 900px) { .thumb { width: 72px; height: 72px; border-radius: 10px; } }
@@ -1323,7 +1328,7 @@ function render() {
         '<div class="file-row' + (f.highlighted ? ' highlighted' : '') + '">' +
         '<div class="file-row-top">' +
         '<input type="checkbox" class="file-check" data-key="' + key + '">' +
-        '<input type="checkbox" class="highlight-check" data-key="' + key + '"' + (f.highlighted ? ' checked' : '') + ' title="Highlight this entry">' +
+        '<button type="button" class="highlight-star' + (f.highlighted ? ' active' : '') + '" data-key="' + key + '" data-highlighted="' + (f.highlighted ? '1' : '') + '" title="' + (f.highlighted ? 'Remove highlight' : 'Highlight this entry') + '">' + (f.highlighted ? '★' : '☆') + '</button>' +
         thumb +
         '<div class="name">' + (f.highlighted ? '<span class="name-marker">' + nameDisplay + '</span>' : nameDisplay) + '</div>' +
         '</div>' +
@@ -1353,8 +1358,8 @@ function render() {
       updateBulkButton(visibleFiles);
     };
   });
-  groupsEl.querySelectorAll('.highlight-check').forEach((cb) => {
-    cb.onchange = () => toggleHighlight(cb.dataset.key, cb.checked);
+  groupsEl.querySelectorAll('.highlight-star').forEach((btn) => {
+    btn.onclick = () => toggleHighlight(btn.dataset.key, !btn.dataset.highlighted);
   });
   groupsEl.querySelectorAll('.copy-batch, .copy-file').forEach((btn) => {
     btn.onclick = (e) => copyToClipboard(e.target, e.target.dataset.url);
