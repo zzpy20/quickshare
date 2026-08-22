@@ -32,6 +32,9 @@ quickshare exists for one reason: sometimes you just need to upload a screenshot
   - Per-file delete and **regenerate link** (rotates a file to a fresh random link)
   - Regenerated links keep the old link alive for a **7-day grace period** before it expires, so a share you already sent doesn't break instantly
   - Select a batch (or a single file) and click **"Email selected"** to send yourself that entry's link and file list, via Resend
+  - **Highlight** entries with a per-file star toggle, and a "Highlighted only" filter chip to find them again
+  - **Archive entries you're done with** — a per-file toggle, a per-batch "Archive batch" button, and a bulk "Archive selected" action (mirroring "Combine selected"), plus a dedicated "Archived" tab. Archiving always applies to a whole batch together, so one can never end up half-archived; it's admin-panel-only bookkeeping — shared links keep working. The search box still finds archived results even from the default view
+  - The bulk-action toolbar stays pinned to the top of the screen while scrolling, so it's always reachable regardless of how far down the list you've selected from
   - A floating "+" button stays on screen while scrolling through a long file list
 - **Email a file in** — attach a file to an email and send it to `share@1000600.xyz`; it's uploaded automatically (tagged `emailed in`) and you get a Resend reply with the share link. Restricted to a single allowed sender address
 - **Thumbnails generated on demand** — image thumbnails are transformed straight from the original in R2 at request time (Cloudflare Images), not pre-generated at upload or stored as separate files
@@ -43,6 +46,19 @@ quickshare exists for one reason: sometimes you just need to upload a screenshot
 Cloudflare Workers (JavaScript) + Cloudflare R2, deployed with Wrangler, plus Resend for outbound email, Cloudflare Images for on-the-fly thumbnails, and Cloudflare Email Routing + [postal-mime](https://www.npmjs.com/package/postal-mime) for inbound email uploads. No frameworks — `postal-mime` is the app's only dependency, so `npm install` is needed once before deploying, but there's still no separate build step.
 
 ### Changelog
+
+**2026-08-23**
+- Admin panel: **Archive / Unarchive** — a per-file toggle, a per-batch "Archive batch" button, and a bulk "Archive selected" toolbar action (same UI pattern as "Combine selected"). Archived entries are hidden from every normal view by default and only appear in a new "Archived" tab, where the same controls unarchive them. Archiving always acts on a whole batch at once (never leaves one half-archived), combining an archived entry always un-archives the result, and it's purely admin-panel bookkeeping — direct file/batch links and the gallery are unaffected
+- The search box now finds matches inside archived entries too, even when browsing the default (non-archived) view, instead of only within whichever tab is currently active
+- The bulk-action toolbar (Delete/Archive/Combine/Email selected) is now sticky, staying pinned to the top of the screen while scrolling through a long, filtered, or searched list
+- Restyled the "Archived" tab and its per-item toggle buttons with a bold indigo active state, after the initial gray blended into the UI too much to notice at a glance
+
+**2026-08-22**
+- Fixed garbled (mojibake) text on iPhone for HTML pages saved via "Save as page" or uploaded directly: the server-side HTML sanitizer stripped every `<meta>` tag — including the charset declaration — and stored HTML uploads had no charset in their `Content-Type` either, so with zero encoding signal anywhere, iOS Safari/Chrome guessed the wrong encoding for non-Latin text while macOS happened to guess right. Both are now declared explicitly; existing previously-saved pages were repaired in place via a one-time migration
+
+**2026-08-15**
+- Admin panel: a per-file **highlight** star toggle, and a "★ Highlighted only" filter chip to narrow the list down to just the entries you've starred
+- Fixed uploaded HTML files silently losing every `<img>` tag — the sanitizer was stripping images along with genuinely dangerous tags instead of just neutralizing unsafe attributes on them
 
 **2026-08-09**
 - Admin page: a "back to top" floating button appears once you've scrolled down, stacked above the existing "+" upload button, and smooth-scrolls back to the top of the list on click
@@ -98,6 +114,9 @@ quickshare 是一个个人文件/图片上传工具。目的很简单：有时�
   - 单个文件删除，以及**重新生成链接**（把文件换到一个全新的随机链接上）
   - 重新生成链接后，旧链接会保留 **7 天的过渡期** 才失效，避免已经发出去的链接立刻失效
   - 勾选一个批次（或单个文件）后点击**"Email selected"**，即可通过 Resend 把该条目的链接和文件列表发到自己邮箱
+  - **高亮标记** — 每个文件都有一个星标开关，配合"仅显示高亮"筛选标签快速找回标记过的内容
+  - **归档用不到的条目** — 单文件开关、批次级"归档批次"按钮，以及批量工具栏的"归档所选"（与"合并所选"的交互方式一致），再加一个专门的"已归档"标签页。归档始终作用于整个批次（不会出现半归档状态），只是管理面板内部的整理功能——分享链接照常可用。搜索框在默认视图下也能搜到已归档内容
+  - 批量操作工具栏在滚动时会固定在屏幕顶部，无论列表选到多下面都能随时点到
   - 悬浮的"+"按钮始终固定在屏幕上，方便在长长的文件列表中随时跳转到上传页面
 - **邮件上传** — 把文件当附件发到 `share@1000600.xyz` 即可自动上传（自动打上 `emailed in` 标签），随后会收到一封 Resend 回信附上分享链接。仅限一个指定的发件邮箱地址使用
 - **缩略图按需生成** — 图片缩略图在请求时由 R2 中的原图实时转换生成（Cloudflare Images），不再在上传时预先生成、也不再单独存成一个文件
@@ -109,6 +128,19 @@ quickshare 是一个个人文件/图片上传工具。目的很简单：有时�
 Cloudflare Workers（JavaScript）+ Cloudflare R2，用 Wrangler 部署，另用 Resend 发送邮件、Cloudflare Images 实时生成缩略图、Cloudflare Email Routing + [postal-mime](https://www.npmjs.com/package/postal-mime) 处理邮件上传。没有前端框架——`postal-mime` 是本项目唯一的依赖，部署前需要执行一次 `npm install`，但仍然不需要单独的构建步骤。
 
 ### 更新日志
+
+**2026-08-23**
+- 管理面板新增**归档 / 取消归档**功能——单文件开关、批次级"归档批次"按钮，以及批量工具栏的"归档所选"（与"合并所选"是同一套交互模式）。已归档的条目默认从所有常规视图中隐藏，只出现在新增的"已归档"标签页里，同样的按钮在那里用来取消归档。归档操作始终作用于整个批次（不会出现半归档的情况），合并操作只要涉及已归档的条目就会把结果一并取消归档，而且归档只是管理面板内部的整理状态——直接的文件/批次链接和相册页都不受影响
+- 搜索框现在即使在默认（非归档）视图下也能搜到已归档条目里的内容，而不再局限于当前所在的标签页
+- 批量操作工具栏（删除/归档/合并/Email selected）改为吸顶固定，无论列表经过筛选或搜索后滚动多远都能随时点到
+- 重新设计了"已归档"标签页及各归档按钮点亮后的样式，改用醒目的靛蓝色——此前的灰色和界面本身太接近，点击后不容易看出状态变化
+
+**2026-08-22**
+- 修复了通过"存为网页"粘贴保存或直接上传的 HTML 页面，在 iPhone 上中文等非拉丁文字显示乱码的问题：服务端的 HTML 净化逻辑会剥离所有 `<meta>` 标签（包括编码声明），存储时的 `Content-Type` 也没有带上编码信息，导致整个页面完全没有任何编码线索——iOS 上的 Safari/Chrome 会猜错编码，而 Mac 上恰好猜对了，才没被注意到。现在两处都会显式声明 UTF-8；此前已保存的旧页面也通过一次性迁移就地修复了
+
+**2026-08-15**
+- 管理面板新增单文件**高亮**星标开关，以及"★ 仅显示高亮"筛选标签，可以快速把列表收窄到只显示标记过的条目
+- 修复了上传的 HTML 文件中所有 `<img>` 标签会被静默删除的问题——净化逻辑此前把图片标签和真正有风险的标签一起整个移除了，而不是只清理图片标签上不安全的属性
 
 **2026-08-09**
 - 管理面板新增"回到顶部"悬浮按钮，向下滚动后会出现在现有"+"上传按钮的上方，点击后平滑滚动回列表顶部
