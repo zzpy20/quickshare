@@ -144,7 +144,12 @@ const STYLE = `
   }
   #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
   img.preview { max-width: 100%; border-radius: 10px; display: block; margin-bottom: 6px; }
-  #toolbar { display: flex; align-items: center; gap: 10px; margin: 20px 0; }
+  #toolbar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 20px 0;
+    position: sticky; top: 0; z-index: 100; background: #fff;
+    padding: 10px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+  @media (prefers-color-scheme: dark) { #toolbar { background: #1c1c1e; box-shadow: 0 2px 8px rgba(0,0,0,0.4); } }
   #toolbar label { display: flex; align-items: center; gap: 6px; font-size: 13px; }
   #bulkDelete { margin-left: auto; background: #ff3b30; }
   button.delete-batch { background: #ff3b30; color: #fff; }
