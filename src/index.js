@@ -1247,7 +1247,11 @@ function computeView() {
   const hasFilter = !!searchTerm || !!activeTag || activeType !== 'all' || activeHighlightOnly || activeArchivedOnly;
   const displayById = {};
   Object.keys(byId).forEach((id) => {
-    const archivedSplit = byId[id].filter((f) => (activeArchivedOnly ? f.archived : !f.archived));
+    const archivedSplit = byId[id].filter((f) => {
+      if (activeArchivedOnly) return f.archived;
+      if (searchTerm) return true;
+      return !f.archived;
+    });
     const group = hasFilter ? archivedSplit.filter(fileMatchesFilters) : archivedSplit;
     displayById[id] = [...group].sort((a, b) => (b.highlighted ? 1 : 0) - (a.highlighted ? 1 : 0));
   });
