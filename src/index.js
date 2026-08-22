@@ -45,8 +45,8 @@ const STYLE = `
   #highlightFilter { margin: 8px 0 0; }
   .highlight-filter-chip.active { background: #ffd60a !important; color: #1d1d1f !important; }
   #archivedFilter { margin: 8px 0 0; }
-  .archived-filter-chip.active { background: #8e8e93 !important; color: #fff !important; }
-  .archive-toggle.active { opacity: 0.7; }
+  .archived-filter-chip.active { background: #5856d6 !important; color: #fff !important; font-weight: 700; }
+  .archive-toggle.active, button.archive-batch.active { background: #5856d6 !important; color: #fff !important; }
   .file-tag {
     padding: 2px 6px 2px 9px; border-radius: 999px; background: #e8e8ed; font-size: 11px;
     flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px;
@@ -1312,7 +1312,7 @@ function render() {
         '<a href="/b/' + id + '" target="_blank">open batch</a>' +
         '<button class="secondary small copy-batch" data-url="' + location.origin + '/b/' + id + '">Copy batch link</button>' +
         '<button class="secondary small copy-batch-all" data-id="' + id + '">Copy all links</button>' +
-        '<button class="secondary small archive-batch" data-id="' + id + '" data-archived="' + (batchArchived ? '1' : '') + '">' + (batchArchived ? 'Unarchive batch' : 'Archive batch') + '</button>' +
+        '<button class="secondary small archive-batch' + (batchArchived ? ' active' : '') + '" data-id="' + id + '" data-archived="' + (batchArchived ? '1' : '') + '">' + (batchArchived ? 'Unarchive batch' : 'Archive batch') + '</button>' +
         '<button class="secondary small delete-batch" data-id="' + id + '">Delete batch</button></div>'
       : '<div class="group-head"><span>single file</span></div>';
 
