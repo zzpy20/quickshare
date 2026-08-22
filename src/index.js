@@ -2101,6 +2101,11 @@ async function sanitizeHtml(bytes) {
       if (src && srcPattern.test(src)) el.removeAttribute('src');
     },
   });
+  // The <meta> strip above (needed to drop http-equiv redirects/CSP overrides) also
+  // removes any charset declaration. Without one, browsers must sniff the encoding,
+  // and iOS Safari/Chrome guess wrong for non-Latin text where macOS happens to guess
+  // right. Re-declare it explicitly since we always re-encode the body as UTF-8 below.
+  rewriter.on('head', { element(el) { el.prepend('<meta charset="utf-8">', { html: true }); } });
   const res = rewriter.transform(new Response(bytes, { headers: { 'content-type': 'text/html; charset=utf-8' } }));
   return new Uint8Array(await res.arrayBuffer());
 }
@@ -2210,12 +2215,14 @@ export default {
         const type = file.type || 'application/octet-stream';
         let body = file.stream();
         let size = file.size;
+        let storedType = type;
         if (type === 'text/html') {
           body = await sanitizeHtml(await file.arrayBuffer());
           size = body.byteLength;
+          storedType = 'text/html; charset=utf-8';
         }
         await env.SHARE_R2.put(id + '/' + name, body, {
-          httpMetadata: { contentType: type },
+          httpMetadata: { contentType: storedType },
           customMetadata: baseMetadata,
         });
         manifest.push({ name, type, size });
