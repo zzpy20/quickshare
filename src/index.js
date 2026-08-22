@@ -44,6 +44,9 @@ const STYLE = `
   .tag-chip.active { background: #0071e3; color: #fff; }
   #highlightFilter { margin: 8px 0 0; }
   .highlight-filter-chip.active { background: #ffd60a !important; color: #1d1d1f !important; }
+  #archivedFilter { margin: 8px 0 0; }
+  .archived-filter-chip.active { background: #8e8e93 !important; color: #fff !important; }
+  .archive-toggle.active { opacity: 0.7; }
   .file-tag {
     padding: 2px 6px 2px 9px; border-radius: 999px; background: #e8e8ed; font-size: 11px;
     flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px;
@@ -1032,9 +1035,12 @@ const ADMIN_PAGE = `<!doctype html>
 
   <div id="highlightFilter"></div>
 
+  <div id="archivedFilter"></div>
+
   <div id="toolbar">
     <label><input type="checkbox" id="selectAll"> Select all on page</label>
     <button id="bulkDelete" class="secondary" style="display:none;">Delete selected</button>
+    <button id="bulkArchive" class="secondary" style="display:none;">Archive selected</button>
     <button id="bulkCombine" class="secondary" style="display:none;">Combine selected</button>
     <button id="bulkEmail" class="secondary" style="display:none;">Email selected</button>
     <button id="refresh" class="secondary">Refresh</button>
@@ -1077,11 +1083,12 @@ const ADMIN_PAGE = `<!doctype html>
 
 <script>
 const $ = (id) => document.getElementById(id);
-const banner = $('banner'), groupsEl = $('groups'), bulkBtn = $('bulkDelete'), combineBtn = $('bulkCombine'), emailBtn = $('bulkEmail'), selectAllBox = $('selectAll');
+const banner = $('banner'), groupsEl = $('groups'), bulkBtn = $('bulkDelete'), archiveBtn = $('bulkArchive'), combineBtn = $('bulkCombine'), emailBtn = $('bulkEmail'), selectAllBox = $('selectAll');
 const searchBox = $('searchBox'), paginationEl = $('pagination'), resultsSummary = $('resultsSummary');
 const tagFiltersEl = $('tagFilters');
 const typeFiltersEl = $('typeFilters');
 const highlightFilterEl = $('highlightFilter');
+const archivedFilterEl = $('archivedFilter');
 const lightbox = $('lightbox'), lightboxMedia = $('lightboxMedia');
 const confirmOverlay = $('confirmOverlay'), confirmMessageEl = $('confirmMessage');
 const confirmCancelBtn = $('confirmCancel'), confirmOkBtn = $('confirmOk');
@@ -1131,6 +1138,7 @@ let searchTerm = '';
 let activeTag = null;
 let activeType = 'all';
 let activeHighlightOnly = false;
+let activeArchivedOnly = false;
 let currentPage = 1;
 const PAGE_SIZE = 20;
 const selected = new Set();
@@ -1167,6 +1175,16 @@ function renderHighlightFilter() {
     '<button type="button" class="tag-chip highlight-filter-chip' + (activeHighlightOnly ? ' active' : '') + '">★ Highlighted only</button>';
   highlightFilterEl.querySelector('.highlight-filter-chip').onclick = () => {
     activeHighlightOnly = !activeHighlightOnly;
+    currentPage = 1;
+    render();
+  };
+}
+
+function renderArchivedFilter() {
+  archivedFilterEl.innerHTML =
+    '<button type="button" class="tag-chip archived-filter-chip' + (activeArchivedOnly ? ' active' : '') + '">🗄 Archived</button>';
+  archivedFilterEl.querySelector('.archived-filter-chip').onclick = () => {
+    activeArchivedOnly = !activeArchivedOnly;
     currentPage = 1;
     render();
   };
@@ -1221,10 +1239,11 @@ function computeView() {
   const byId = {};
   allFiles.forEach((f) => { (byId[f.id] = byId[f.id] || []).push(f); });
 
-  const hasFilter = !!searchTerm || !!activeTag || activeType !== 'all' || activeHighlightOnly;
+  const hasFilter = !!searchTerm || !!activeTag || activeType !== 'all' || activeHighlightOnly || activeArchivedOnly;
   const displayById = {};
   Object.keys(byId).forEach((id) => {
-    const group = hasFilter ? byId[id].filter(fileMatchesFilters) : byId[id];
+    const archivedSplit = byId[id].filter((f) => (activeArchivedOnly ? f.archived : !f.archived));
+    const group = hasFilter ? archivedSplit.filter(fileMatchesFilters) : archivedSplit;
     displayById[id] = [...group].sort((a, b) => (b.highlighted ? 1 : 0) - (a.highlighted ? 1 : 0));
   });
 
@@ -1234,9 +1253,7 @@ function computeView() {
     return db - da;
   });
 
-  if (hasFilter) {
-    ids = ids.filter((id) => displayById[id].length > 0);
-  }
+  ids = ids.filter((id) => displayById[id].length > 0);
 
   const totalGroups = ids.length;
   const totalPages = Math.max(1, Math.ceil(totalGroups / PAGE_SIZE));
@@ -1254,6 +1271,7 @@ function render() {
   renderTypeFilters();
   renderTagFilters();
   renderHighlightFilter();
+  renderArchivedFilter();
 
   if (!allFiles.length) {
     groupsEl.innerHTML = '<p class="sub">No files yet.</p>';
@@ -1270,6 +1288,7 @@ function render() {
     activeTag ? 'tag "' + activeTag + '"' : null,
     activeType !== 'all' ? (TYPE_DEFS.find((t) => t.key === activeType) || {}).label : null,
     activeHighlightOnly ? 'highlighted' : null,
+    activeArchivedOnly ? 'archived' : null,
   ].filter(Boolean).join(' + ');
   resultsSummary.textContent = filterLabel
     ? totalFileCount + ' file(s) match ' + filterLabel
@@ -1287,11 +1306,13 @@ function render() {
     const fullCount = byId[id].length;
     const shownHint = files.length !== fullCount ? ' · ' + files.length + ' shown' : '';
     const isBatch = batchIds.includes(id);
+    const batchArchived = isBatch && files.length > 0 && files.every((f) => f.archived);
     const head = isBatch
       ? '<div class="group-head"><span>📦 batch of ' + fullCount + shownHint + '</span>' +
         '<a href="/b/' + id + '" target="_blank">open batch</a>' +
         '<button class="secondary small copy-batch" data-url="' + location.origin + '/b/' + id + '">Copy batch link</button>' +
         '<button class="secondary small copy-batch-all" data-id="' + id + '">Copy all links</button>' +
+        '<button class="secondary small archive-batch" data-id="' + id + '" data-archived="' + (batchArchived ? '1' : '') + '">' + (batchArchived ? 'Unarchive batch' : 'Archive batch') + '</button>' +
         '<button class="secondary small delete-batch" data-id="' + id + '">Delete batch</button></div>'
       : '<div class="group-head"><span>single file</span></div>';
 
@@ -1342,6 +1363,7 @@ function render() {
         '<a href="' + escapeHtml(full) + '" target="_blank">open</a>' +
         '<button class="secondary small copy-file" data-url="' + escapeHtml(f.linkTarget || full) + '">Copy links</button>' +
         '<button class="secondary small regen" data-key="' + key + '">Regenerate links</button>' +
+        '<button type="button" class="secondary small archive-toggle' + (f.archived ? ' active' : '') + '" data-id="' + escapeHtml(f.id) + '" data-archived="' + (f.archived ? '1' : '') + '" title="' + (f.archived ? 'Unarchive this entry' : 'Archive this entry') + '">' + (f.archived ? 'Unarchive' : 'Archive') + '</button>' +
         '<button class="secondary small del" data-key="' + key + '">Delete</button>' +
         '</div>' +
         '</div>'
@@ -1360,6 +1382,9 @@ function render() {
   });
   groupsEl.querySelectorAll('.highlight-star').forEach((btn) => {
     btn.onclick = () => toggleHighlight(btn.dataset.key, !btn.dataset.highlighted);
+  });
+  groupsEl.querySelectorAll('.archive-toggle, .archive-batch').forEach((btn) => {
+    btn.onclick = () => toggleArchived(btn.dataset.id, !btn.dataset.archived);
   });
   groupsEl.querySelectorAll('.copy-batch, .copy-file').forEach((btn) => {
     btn.onclick = (e) => copyToClipboard(e.target, e.target.dataset.url);
@@ -1434,6 +1459,14 @@ function updateBulkButton(visibleFiles) {
   selectAllBox.checked = keys.length > 0 && keys.every((k) => selected.has(k));
 
   const touchedIds = new Set([...selected].map((k) => k.slice(0, k.indexOf('/'))));
+
+  if (touchedIds.size >= 1) {
+    archiveBtn.style.display = 'inline-block';
+    archiveBtn.textContent = (activeArchivedOnly ? 'Unarchive selected (' : 'Archive selected (') + touchedIds.size + ' entries)';
+  } else {
+    archiveBtn.style.display = 'none';
+  }
+
   if (touchedIds.size >= 2) {
     combineBtn.style.display = 'inline-block';
     combineBtn.textContent = 'Combine selected (' + touchedIds.size + ' entries)';
@@ -1455,6 +1488,28 @@ bulkBtn.onclick = async () => {
   const ok = await confirmDialog('Delete ' + selected.size + ' file(s)? This cannot be undone.');
   if (!ok) return;
   deleteKeys([...selected]);
+};
+
+archiveBtn.onclick = async () => {
+  const touchedIds = [...new Set([...selected].map((k) => k.slice(0, k.indexOf('/'))))];
+  if (!touchedIds.length) return;
+  const nextArchived = !activeArchivedOnly;
+  const verb = nextArchived ? 'Archive' : 'Unarchive';
+
+  const ok = await confirmDialog(
+    verb + ' ' + touchedIds.length + ' entries (' + selected.size + ' file(s) total)?',
+    verb
+  );
+  if (!ok) return;
+
+  fetch('/admin/set-archived', {
+    method: 'POST',
+    headers: Object.assign({ 'content-type': 'application/json' }, authHeaders()),
+    body: JSON.stringify({ ids: touchedIds, archived: nextArchived }),
+  })
+    .then((r) => { if (!r.ok) throw new Error(verb + ' failed'); })
+    .then(() => { selected.clear(); load(); })
+    .catch((err) => showBanner(err.message, true));
 };
 
 combineBtn.onclick = async () => {
@@ -1562,6 +1617,20 @@ function toggleHighlight(key, highlighted) {
     .then(({ highlighted: newHighlighted }) => {
       const f = allFiles.find((f) => f.key === key);
       if (f) f.highlighted = newHighlighted;
+      render();
+    })
+    .catch((err) => showBanner(err.message, true));
+}
+
+function toggleArchived(id, archived) {
+  fetch('/admin/set-archived', {
+    method: 'POST',
+    headers: Object.assign({ 'content-type': 'application/json' }, authHeaders()),
+    body: JSON.stringify({ ids: [id], archived }),
+  })
+    .then((r) => { if (!r.ok) throw new Error('Failed to update archive state'); return r.json(); })
+    .then(({ archived: newArchived }) => {
+      allFiles.filter((f) => f.id === id).forEach((f) => { f.archived = newArchived; });
       render();
     })
     .catch((err) => showBanner(err.message, true));
@@ -2305,6 +2374,7 @@ export default {
             caption: cm.caption || '',
             linkTarget: cm.linkTarget || null,
             highlighted: cm.highlighted === '1',
+            archived: cm.archived === '1',
           };
         });
       const batchIds = objects
@@ -2346,6 +2416,18 @@ export default {
         linkTarget: (o.customMetadata && o.customMetadata.linkTarget) || undefined,
       }));
 
+      for (const o of targetFiles) {
+        if (!o.customMetadata || o.customMetadata.archived !== '1') continue;
+        const object = await env.SHARE_R2.get(o.key);
+        if (!object) continue;
+        const cm = Object.assign({}, object.customMetadata);
+        delete cm.archived;
+        await env.SHARE_R2.put(o.key, object.body, {
+          httpMetadata: object.httpMetadata,
+          customMetadata: cm,
+        });
+      }
+
       for (const id of ids) {
         const sourceFiles = await listEntryFiles(env.SHARE_R2, id);
         for (const o of sourceFiles) {
@@ -2356,9 +2438,12 @@ export default {
           const newName = dedupeFilename(used, sanitizeFilename(oldName));
           const newKey = targetId + '/' + newName;
 
+          const cm = Object.assign({}, object.customMetadata);
+          delete cm.archived;
+
           await env.SHARE_R2.put(newKey, object.body, {
             httpMetadata: object.httpMetadata,
-            customMetadata: object.customMetadata,
+            customMetadata: cm,
           });
 
           await env.SHARE_R2.delete(o.key);
@@ -2504,6 +2589,34 @@ export default {
       });
 
       return Response.json({ ok: true, highlighted: !!highlighted });
+    }
+
+    if (request.method === 'POST' && pathname === '/admin/set-archived') {
+      if (!checkToken(request, env)) {
+        return Response.json({ error: 'unauthorized' }, { status: 401 });
+      }
+      const { ids, archived } = await request.json();
+      if (!Array.isArray(ids) || !ids.length) {
+        return Response.json({ error: 'no ids' }, { status: 400 });
+      }
+      let count = 0;
+      for (const id of ids) {
+        const files = await listEntryFiles(env.SHARE_R2, id);
+        for (const o of files) {
+          const object = await env.SHARE_R2.get(o.key);
+          if (!object) continue;
+          const cm = Object.assign({}, object.customMetadata);
+          if (!cm.createdAt) cm.createdAt = object.uploaded.toISOString();
+          if (archived) cm.archived = '1';
+          else delete cm.archived;
+          await env.SHARE_R2.put(o.key, object.body, {
+            httpMetadata: object.httpMetadata,
+            customMetadata: cm,
+          });
+          count++;
+        }
+      }
+      return Response.json({ ok: true, archived: !!archived, count });
     }
 
     if (request.method === 'POST' && pathname === '/admin/add-tag') {
