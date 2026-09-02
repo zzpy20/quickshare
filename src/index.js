@@ -63,6 +63,9 @@ const STYLE = `
     font-weight: 500; cursor: pointer;
   }
   button.caption-add-btn:hover { background: none; text-decoration: underline; }
+  a.caption-readmore { font-size: 12px; font-weight: 500; color: #0071e3; text-decoration: none; }
+  a.caption-readmore:hover { text-decoration: underline; }
+  .caption-hint { width: 100%; font-size: 11px; color: #86868b; }
   .caption-input {
     flex: 1; min-width: 140px; padding: 6px 10px; border-radius: 8px;
     border: 1px solid #d2d2d7; font-size: 12px; font-family: inherit;
@@ -433,7 +436,17 @@ function showLightboxAt(i) {
   $('lightboxName').textContent = f.name || '';
   const capEl = $('lightboxCaption');
   if (f.caption) {
-    capEl.textContent = '📝 ' + f.caption;
+    capEl.innerHTML = '';
+    capEl.appendChild(document.createTextNode('📝 ' + f.caption));
+    if (f.captionFull && f.captionUrl) {
+      const more = document.createElement('a');
+      more.href = location.origin + f.captionUrl;
+      more.target = '_blank';
+      more.rel = 'noopener';
+      more.textContent = 'Read more';
+      more.style.marginLeft = '6px';
+      capEl.appendChild(more);
+    }
     capEl.style.display = 'block';
   } else {
     capEl.style.display = 'none';
@@ -1343,8 +1356,11 @@ function render() {
       const linkMeta = isLink && f.linkTarget
         ? '<div class="meta link-target"><a href="' + escapeHtml(f.linkTarget) + '" target="_blank" rel="noopener">' + escapeHtml(f.linkTarget) + '</a></div>'
         : '';
+      const readMoreLink = f.captionFull && f.captionUrl
+        ? '<a class="caption-readmore" href="' + escapeHtml(f.captionUrl) + '" target="_blank" rel="noopener">Read more</a>'
+        : '';
       const captionInner = f.caption
-        ? '<span class="caption-text">📝 ' + escapeHtml(f.caption) + '</span>' +
+        ? '<span class="caption-text">📝 ' + escapeHtml(f.caption) + '</span>' + readMoreLink +
           '<button type="button" class="caption-add-btn caption-edit-btn" data-key="' + key + '" data-caption="' + escapeHtml(f.caption) + '" title="Edit caption">Edit</button>'
         : '<button type="button" class="caption-add-btn" data-key="' + key + '" data-caption="" title="Add caption">+ caption</button>';
       const caption = '<div class="meta caption">' + captionInner + '</div>';
@@ -1661,8 +1677,14 @@ function removeTag(key, tag) {
 }
 
 function startCaptionEdit(container, key, currentCaption) {
+  const f = allFiles.find((x) => x.key === key);
+  const isLink = !!(f && f.linkTarget);
+  const rows = isLink ? 8 : 2;
+  const maxAttr = isLink ? '' : ' maxlength="1000"';
+  const hint = isLink ? '<div class="caption-hint">Long captions are saved as a separate page.</div>' : '';
   container.innerHTML =
-    '<textarea class="caption-input" placeholder="Add a note…" rows="2" maxlength="1000">' + escapeHtml(currentCaption) + '</textarea>' +
+    '<textarea class="caption-input" placeholder="Add a note…" rows="' + rows + '"' + maxAttr + '>' + escapeHtml(currentCaption) + '</textarea>' +
+    hint +
     '<button type="button" class="secondary small caption-save">Save</button>' +
     '<button type="button" class="secondary small caption-cancel">Cancel</button>';
   const input = container.querySelector('.caption-input');
@@ -1683,9 +1705,13 @@ function saveCaption(key, caption) {
     body: JSON.stringify({ key, caption }),
   })
     .then((r) => { if (!r.ok) throw new Error('Failed to save caption'); return r.json(); })
-    .then(({ caption: newCaption }) => {
+    .then(({ caption: newCaption, captionFull }) => {
       const f = allFiles.find((f) => f.key === key);
-      if (f) f.caption = newCaption;
+      if (f) {
+        f.caption = newCaption;
+        f.captionFull = !!captionFull;
+        f.captionUrl = captionFull ? '/caption/' + f.id + '/' + encodeURIComponent(f.name) : null;
+      }
       render();
     })
     .catch((err) => showBanner(err.message, true));
@@ -2091,6 +2117,23 @@ function clampCaption(raw) {
   return result;
 }
 
+function captionOverflows(raw) {
+  const str = (raw || '').trim();
+  if (!str) return false;
+  if (str.length > CAPTION_MAX_CHARS) return true;
+  const encoder = new TextEncoder();
+  return encoder.encode(str).length > CAPTION_MAX_BYTES;
+}
+
+function wrapCaptionHtml(text) {
+  return '<!doctype html><html><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+    '<title>Caption</title>' +
+    '<style>body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;max-width:700px;margin:40px auto;padding:0 20px;line-height:1.6;color:#1d1d1f;white-space:pre-wrap;}' +
+    '@media (prefers-color-scheme:dark){body{color:#f5f5f7;background:#1c1c1e;}}</style>' +
+    '</head><body>' + escapeHtmlServer(text) + '</body></html>';
+}
+
 const LINK_CONTENT_TYPE = 'text/x-quickshare-link';
 
 function normalizeLinkUrl(raw) {
@@ -2278,7 +2321,9 @@ export default {
       const tags = typeof tagsRaw === 'string'
         ? [...new Set(tagsRaw.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean))]
         : [];
-      const caption = typeof captionRaw === 'string' ? clampCaption(captionRaw) : '';
+      const captionRawTrimmed = typeof captionRaw === 'string' ? captionRaw.trim() : '';
+      const caption = clampCaption(captionRawTrimmed);
+      const captionIsLong = captionOverflows(captionRawTrimmed);
       const baseMetadata = { createdAt: new Date().toISOString() };
       if (tags.length) baseMetadata.tags = tags.join(',');
       if (caption) baseMetadata.caption = caption;
@@ -2311,8 +2356,15 @@ export default {
         try { host = new URL(url).hostname.replace(/^www\./, ''); } catch (e) { host = 'link'; }
         const name = dedupeFilename(used, sanitizeFilename(host || 'link'));
         const customMetadata = Object.assign({}, baseMetadata, { linkTarget: url });
-        await env.SHARE_R2.put(id + '/' + name, url, {
-          httpMetadata: { contentType: LINK_CONTENT_TYPE },
+        let linkBody = url;
+        let linkHttpMetadata = { contentType: LINK_CONTENT_TYPE };
+        if (captionIsLong) {
+          linkBody = wrapCaptionHtml(captionRawTrimmed);
+          linkHttpMetadata = { contentType: 'text/html; charset=utf-8' };
+          customMetadata.captionFull = '1';
+        }
+        await env.SHARE_R2.put(id + '/' + name, linkBody, {
+          httpMetadata: linkHttpMetadata,
           customMetadata,
         });
         manifest.push({ name, type: LINK_CONTENT_TYPE, size: url.length, linkTarget: url });
@@ -2381,6 +2433,8 @@ export default {
             thumbUrl: contentType && contentType.startsWith('image/') ? '/f/' + id + '/_thumb/' + encodeURIComponent(name) : null,
             tags: cm.tags ? cm.tags.split(',').filter(Boolean) : [],
             caption: cm.caption || '',
+            captionFull: cm.captionFull === '1',
+            captionUrl: cm.captionFull === '1' ? '/caption/' + id + '/' + encodeURIComponent(name) : null,
             linkTarget: cm.linkTarget || null,
             highlighted: cm.highlighted === '1',
             archived: cm.archived === '1',
@@ -2563,18 +2617,34 @@ export default {
       const object = await env.SHARE_R2.get(key);
       if (!object) return Response.json({ error: 'not found' }, { status: 404 });
 
-      const trimmed = typeof caption === 'string' ? clampCaption(caption) : '';
+      const rawCaption = typeof caption === 'string' ? caption.trim() : '';
+      const trimmed = clampCaption(rawCaption);
       const cm = Object.assign({}, object.customMetadata);
       if (!cm.createdAt) cm.createdAt = object.uploaded.toISOString();
       if (trimmed) cm.caption = trimmed;
       else delete cm.caption;
 
-      await env.SHARE_R2.put(key, object.body, {
-        httpMetadata: object.httpMetadata,
+      const isLink = !!cm.linkTarget;
+      const overflow = isLink && captionOverflows(rawCaption);
+      let body = object.body;
+      let httpMetadata = object.httpMetadata;
+      if (overflow) {
+        body = wrapCaptionHtml(rawCaption);
+        httpMetadata = { contentType: 'text/html; charset=utf-8' };
+        cm.captionFull = '1';
+      } else if (isLink) {
+        // Normalize link entries back to their plain URL body (undoes a previous overflow save).
+        body = cm.linkTarget;
+        httpMetadata = { contentType: LINK_CONTENT_TYPE };
+        delete cm.captionFull;
+      }
+
+      await env.SHARE_R2.put(key, body, {
+        httpMetadata,
         customMetadata: cm,
       });
 
-      return Response.json({ ok: true, caption: trimmed });
+      return Response.json({ ok: true, caption: trimmed, captionFull: !!overflow });
     }
 
     if (request.method === 'POST' && pathname === '/admin/set-highlight') {
@@ -2714,6 +2784,18 @@ export default {
       object.writeHttpMetadata(headers);
       headers.set('cache-control', entry ? 'private, no-store' : 'public, max-age=31536000, immutable');
       headers.set('etag', object.httpEtag);
+      return new Response(object.body, { headers });
+    }
+
+    if (request.method === 'GET' && pathname.startsWith('/caption/')) {
+      const key = decodeURIComponent(pathname.slice('/caption/'.length));
+      const object = await env.SHARE_R2.get(key);
+      if (!object || !object.customMetadata || object.customMetadata.captionFull !== '1') {
+        return new Response('Not found', { status: 404 });
+      }
+      const headers = new Headers();
+      object.writeHttpMetadata(headers);
+      headers.set('cache-control', 'private, no-store');
       return new Response(object.body, { headers });
     }
 
