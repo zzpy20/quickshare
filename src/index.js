@@ -2357,14 +2357,12 @@ export default {
         const name = dedupeFilename(used, sanitizeFilename(host || 'link'));
         const customMetadata = Object.assign({}, baseMetadata, { linkTarget: url });
         let linkBody = url;
-        let linkHttpMetadata = { contentType: LINK_CONTENT_TYPE };
         if (captionIsLong) {
           linkBody = wrapCaptionHtml(captionRawTrimmed);
-          linkHttpMetadata = { contentType: 'text/html; charset=utf-8' };
           customMetadata.captionFull = '1';
         }
         await env.SHARE_R2.put(id + '/' + name, linkBody, {
-          httpMetadata: linkHttpMetadata,
+          httpMetadata: { contentType: LINK_CONTENT_TYPE },
           customMetadata,
         });
         manifest.push({ name, type: LINK_CONTENT_TYPE, size: url.length, linkTarget: url });
@@ -2627,20 +2625,17 @@ export default {
       const isLink = !!cm.linkTarget;
       const overflow = isLink && captionOverflows(rawCaption);
       let body = object.body;
-      let httpMetadata = object.httpMetadata;
       if (overflow) {
         body = wrapCaptionHtml(rawCaption);
-        httpMetadata = { contentType: 'text/html; charset=utf-8' };
         cm.captionFull = '1';
       } else if (isLink) {
         // Normalize link entries back to their plain URL body (undoes a previous overflow save).
         body = cm.linkTarget;
-        httpMetadata = { contentType: LINK_CONTENT_TYPE };
         delete cm.captionFull;
       }
 
       await env.SHARE_R2.put(key, body, {
-        httpMetadata,
+        httpMetadata: isLink ? { contentType: LINK_CONTENT_TYPE } : object.httpMetadata,
         customMetadata: cm,
       });
 
@@ -2794,7 +2789,7 @@ export default {
         return new Response('Not found', { status: 404 });
       }
       const headers = new Headers();
-      object.writeHttpMetadata(headers);
+      headers.set('content-type', 'text/html; charset=utf-8');
       headers.set('cache-control', 'private, no-store');
       return new Response(object.body, { headers });
     }
