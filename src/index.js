@@ -2482,9 +2482,9 @@ load();
 
 const ID_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ'; // no 0/O or 1/I/L — easy to read and type
 function randomId() {
-  const d = new Date();
-  const pad = (n) => String(n).padStart(2, '0');
-  const datePart = d.getUTCFullYear() + pad(d.getUTCMonth() + 1) + pad(d.getUTCDate());
+  const datePart = new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Brisbane' })
+    .format(new Date())
+    .replace(/-/g, '');
   const bytes = crypto.getRandomValues(new Uint8Array(7));
   const randPart = [...bytes].map((b) => ID_ALPHABET[b % ID_ALPHABET.length]).join('');
   return datePart + '-' + randPart;
