@@ -941,9 +941,11 @@ function slugifyFilename(title) {
     .replace(/^-+|-+$/g, '')
     .toLowerCase()
     .slice(0, 60);
-  if (slug) return slug;
-  const bytes = crypto.getRandomValues(new Uint8Array(4));
-  return 'page-' + [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const stamp = d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) +
+    '-' + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds());
+  return slug ? stamp + '-' + slug : stamp;
 }
 
 function wrapAsHtmlDocument(title, bodyHtml) {
@@ -1316,9 +1318,11 @@ function slugifyFilename(title) {
     .replace(/^-+|-+$/g, '')
     .toLowerCase()
     .slice(0, 60);
-  if (slug) return slug;
-  const bytes = crypto.getRandomValues(new Uint8Array(4));
-  return 'page-' + [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const stamp = d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) +
+    '-' + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds());
+  return slug ? stamp + '-' + slug : stamp;
 }
 
 function wrapAsHtmlDocument(title, bodyHtml) {
