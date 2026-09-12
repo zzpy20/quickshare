@@ -952,7 +952,7 @@ function wrapAsHtmlDocument(title, bodyHtml) {
   return '<!doctype html><html><head><meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width, initial-scale=1">' +
     '<title>' + escapeHtml(title) + '</title>' +
-    '<style>body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;max-width:700px;margin:40px auto;padding:0 20px;line-height:1.6;color:#1d1d1f;}</style>' +
+    '<style>body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;max-width:700px;margin:40px auto;padding:0 20px;line-height:1.6;color:#1d1d1f;}img{max-width:100%;height:auto;}</style>' +
     '</head><body>' + bodyHtml + '</body></html>';
 }
 
@@ -963,7 +963,9 @@ function handlePastedContent() {
 
   const clean = document.createElement('div');
   clean.innerHTML = rawHtml;
-  clean.querySelectorAll('img').forEach((img) => img.remove());
+  clean.querySelectorAll('img').forEach((img) => {
+    if (!/^data:/i.test(img.getAttribute('src') || '')) img.remove();
+  });
 
   const title = derivePasteTitle(clean);
   const doc = wrapAsHtmlDocument(title, clean.innerHTML);
@@ -1329,7 +1331,7 @@ function wrapAsHtmlDocument(title, bodyHtml) {
   return '<!doctype html><html><head><meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width, initial-scale=1">' +
     '<title>' + escapeHtml(title) + '</title>' +
-    '<style>body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;max-width:700px;margin:40px auto;padding:0 20px;line-height:1.6;color:#1d1d1f;}</style>' +
+    '<style>body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;max-width:700px;margin:40px auto;padding:0 20px;line-height:1.6;color:#1d1d1f;}img{max-width:100%;height:auto;}</style>' +
     '</head><body>' + bodyHtml + '</body></html>';
 }
 
@@ -1340,7 +1342,9 @@ function handlePastedContent() {
 
   const clean = document.createElement('div');
   clean.innerHTML = rawHtml;
-  clean.querySelectorAll('img').forEach((img) => img.remove());
+  clean.querySelectorAll('img').forEach((img) => {
+    if (!/^data:/i.test(img.getAttribute('src') || '')) img.remove();
+  });
 
   const title = derivePasteTitle(clean);
   const doc = wrapAsHtmlDocument(title, clean.innerHTML);
