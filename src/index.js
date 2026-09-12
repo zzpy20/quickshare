@@ -1940,7 +1940,7 @@ emailBtn.onclick = async () => {
     body: JSON.stringify({ id }),
   })
     .then((r) => { if (!r.ok) throw new Error('Email failed'); })
-    .then(() => showBanner('Emailed to zzpy20@gmail.com', false))
+    .then(() => showToast('✓ Emailed to zzpy20@gmail.com'))
     .catch((err) => showBanner(err.message, true));
 };
 
