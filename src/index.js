@@ -272,6 +272,24 @@ const STYLE = `
     .fab-top { background: #3a3a3c; color: #f5f5f7; }
     .fab-top:hover { background: #48484a; }
   }
+  #quickAddOverlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+    align-items: flex-end; justify-content: center; z-index: 2500;
+  }
+  #quickAddOverlay.open { display: flex; }
+  @media (min-width: 700px) { #quickAddOverlay { align-items: center; padding: 20px; } }
+  #quickAddBox {
+    background: #fff; color: #1d1d1f; border-radius: 16px 16px 0 0;
+    padding: 20px 20px calc(20px + env(safe-area-inset-bottom));
+    max-width: 480px; width: 100%; max-height: 86vh; overflow-y: auto;
+    box-shadow: 0 -4px 30px rgba(0,0,0,0.25);
+  }
+  @media (min-width: 700px) { #quickAddBox { border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.28); } }
+  @media (prefers-color-scheme: dark) { #quickAddBox { background: #2c2c2e; color: #f5f5f7; } }
+  .quick-add-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+  .quick-add-head h2 { font-size: 17px; margin: 0; }
+  #qaMsg { display: none; margin: 14px 0 0; font-size: 13px; }
+  #qaMsg.error { display: block; color: #cf222e; }
 
   body.gallery-page { padding-right: 56px; }
   @media (min-width: 900px) { body.gallery-page { padding-right: 64px; } }
@@ -1028,6 +1046,301 @@ if (openAllBtn) {
 </html>`;
 }
 
+const QUICK_ADD_HTML = `
+  <button type="button" id="quickAddFab" class="fab" title="Quick add">+</button>
+
+  <div id="quickAddOverlay">
+    <div id="quickAddBox">
+      <div class="quick-add-head">
+        <h2>Quick add</h2>
+        <button type="button" id="quickAddClose" class="secondary small" title="Close">✕</button>
+      </div>
+
+      <div id="qaMsg"></div>
+
+      <label class="field-label" for="tagsInput">Tags (comma separated)</label>
+      <div class="field-wrap"><input type="text" id="tagsInput" class="meta-input" placeholder="e.g. tech, read-later"></div>
+
+      <label class="field-label" for="captionInput">Caption (optional)</label>
+      <textarea id="captionInput" class="meta-input" placeholder="Add a note…" rows="3"></textarea>
+
+      <div id="uploadTabs" style="margin-top:16px;">
+        <button type="button" class="upload-tab active" data-tab="files">Upload files</button>
+        <button type="button" class="upload-tab" data-tab="links">Share links</button>
+        <button type="button" class="upload-tab" data-tab="paste">Save as page</button>
+      </div>
+
+      <div id="filesPanel" class="tab-panel active">
+        <div id="drop">Drop files here, or click to choose</div>
+        <input type="file" id="fileInput" multiple>
+        <div id="stagedList"></div>
+        <button type="button" id="uploadFilesBtn" style="margin-top:10px;display:none;">Upload</button>
+      </div>
+
+      <div id="linksPanel" class="tab-panel">
+        <label class="field-label" for="linksInput">Links (one per line)</label>
+        <textarea id="linksInput" class="meta-input" placeholder="https://example.com" rows="2"></textarea>
+        <button type="button" id="shareLinkBtn" style="margin-top:10px;">Share link(s)</button>
+      </div>
+
+      <div id="pastePanel" class="tab-panel">
+        <label class="field-label" for="pasteBox">Paste formatted text</label>
+        <div id="pasteBox" class="meta-input" contenteditable="true" data-placeholder="Paste formatted text here…"></div>
+        <button type="button" id="savePasteBtn" style="margin-top:10px;">Save as page</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+`;
+
+const QUICK_ADD_JS = `
+const quickAddFab = $('quickAddFab'), quickAddOverlay = $('quickAddOverlay'), quickAddClose = $('quickAddClose');
+const qaMsgEl = $('qaMsg');
+const drop = $('drop'), fileInput = $('fileInput'), stagedList = $('stagedList'), uploadFilesBtn = $('uploadFilesBtn');
+const tagsInput = $('tagsInput'), captionInput = $('captionInput');
+const linksInput = $('linksInput'), shareLinkBtn = $('shareLinkBtn');
+const pasteBox = $('pasteBox'), savePasteBtn = $('savePasteBtn');
+const toast = $('toast');
+
+function qaSetMsg(msg, isError) {
+  qaMsgEl.textContent = msg;
+  qaMsgEl.className = isError ? 'error' : '';
+}
+
+let qaToastTimer = null;
+function showToast(msg) {
+  toast.textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(qaToastTimer);
+  qaToastTimer = setTimeout(() => toast.classList.remove('show'), 3000);
+}
+
+function openQuickAdd() {
+  qaSetMsg('', false);
+  quickAddOverlay.classList.add('open');
+}
+function closeQuickAdd() {
+  quickAddOverlay.classList.remove('open');
+}
+quickAddFab.onclick = openQuickAdd;
+quickAddClose.onclick = closeQuickAdd;
+quickAddOverlay.onclick = (e) => { if (e.target === quickAddOverlay) closeQuickAdd(); };
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && quickAddOverlay.classList.contains('open')) closeQuickAdd();
+});
+
+function fmtSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+}
+
+const qaTabPanels = { files: $('filesPanel'), links: $('linksPanel'), paste: $('pastePanel') };
+function switchTab(tab) {
+  document.querySelectorAll('.upload-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
+  Object.entries(qaTabPanels).forEach(([key, el]) => el.classList.toggle('active', key === tab));
+}
+document.querySelectorAll('.upload-tab').forEach((b) => { b.onclick = () => switchTab(b.dataset.tab); });
+
+function normalizeLinkUrl(raw) {
+  let str = (raw || '').trim();
+  if (!str) return null;
+  if (!/^https?:\\/\\//i.test(str)) str = 'https://' + str;
+  try {
+    const u = new URL(str);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+    return u.toString();
+  } catch (e) {
+    return null;
+  }
+}
+
+function trimUrlPunctuation(raw) {
+  let s = raw.replace(/[.,;:!?'"\\u201d\\u2019]+$/, '');
+  while (/[)\\]}]$/.test(s)) {
+    const close = s[s.length - 1];
+    const open = close === ')' ? '(' : close === ']' ? '[' : '{';
+    const closeCount = s.split(close).length - 1;
+    const openCount = s.split(open).length - 1;
+    if (closeCount > openCount) s = s.slice(0, -1);
+    else break;
+  }
+  return s;
+}
+
+function extractUrlsFromLine(line) {
+  const trimmed = line.trim();
+  if (!trimmed) return [];
+
+  if (!/\\s/.test(trimmed)) {
+    const looksLikeUrlStart = /^(https?:\\/\\/|www\\.)/i.test(trimmed) ||
+      /^[^\\s/?#]+\\.[a-z]{2,}([/?#].*)?$/i.test(trimmed);
+    if (looksLikeUrlStart) {
+      const whole = normalizeLinkUrl(trimmed);
+      if (whole) return [whole];
+    }
+  }
+
+  const matches = line.match(/(https?:\\/\\/|www\\.)[^\\s<>"'\\u201c\\u201d\\u2018\\u2019]+/gi) || [];
+  return matches.map(trimUrlPunctuation).map(normalizeLinkUrl).filter(Boolean);
+}
+
+function extractUrls(text) {
+  const found = [];
+  (text || '').split('\\n').forEach((line) => { found.push(...extractUrlsFromLine(line)); });
+  return [...new Set(found)];
+}
+
+let qaStagedFiles = [];
+function renderStagedList() {
+  stagedList.innerHTML = qaStagedFiles.map((f, i) =>
+    '<div class="row"><div class="name">' + escapeHtml(f.name) + '</div>' +
+    '<div class="status">' + fmtSize(f.size) + '</div>' +
+    '<button type="button" class="remove-staged" data-i="' + i + '" title="Remove">×</button></div>'
+  ).join('');
+  stagedList.querySelectorAll('.remove-staged').forEach((btn) => {
+    btn.onclick = () => { qaStagedFiles.splice(Number(btn.dataset.i), 1); renderStagedList(); };
+  });
+  uploadFilesBtn.style.display = qaStagedFiles.length ? 'inline-block' : 'none';
+  uploadFilesBtn.textContent = 'Upload ' + qaStagedFiles.length + ' file' + (qaStagedFiles.length === 1 ? '' : 's');
+}
+
+function addFiles(fileList) {
+  qaStagedFiles.push(...[...fileList]);
+  renderStagedList();
+}
+
+drop.onclick = () => fileInput.click();
+drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('hover'); };
+drop.ondragleave = () => drop.classList.remove('hover');
+drop.ondrop = (e) => {
+  e.preventDefault();
+  drop.classList.remove('hover');
+  addFiles(e.dataTransfer.files);
+};
+fileInput.onchange = () => { addFiles(fileInput.files); fileInput.value = ''; };
+
+function quickAddDone(count, label) {
+  tagsInput.value = '';
+  captionInput.value = '';
+  closeQuickAdd();
+  showToast('✓ ' + count + ' ' + label + (count === 1 ? '' : 's') + ' added');
+  load();
+}
+
+function uploadStagedFiles() {
+  qaSetMsg('', false);
+  if (!qaStagedFiles.length) return;
+  const arr = qaStagedFiles;
+
+  const fd = new FormData();
+  arr.forEach((f) => fd.append('file', f, f.name));
+  fd.append('tags', tagsInput.value);
+  fd.append('caption', captionInput.value);
+
+  uploadFilesBtn.disabled = true;
+  fetch('/upload', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: fd,
+  })
+    .then(async (r) => {
+      if (r.status === 401) { showAuth(true); throw new Error('Wrong password'); }
+      if (!r.ok) throw new Error('Upload failed');
+      return r.json();
+    })
+    .then(({ files: uploaded }) => {
+      qaStagedFiles = [];
+      renderStagedList();
+      quickAddDone(uploaded.length, 'file');
+    })
+    .catch((err) => qaSetMsg(err.message, true))
+    .finally(() => { uploadFilesBtn.disabled = false; });
+}
+uploadFilesBtn.onclick = uploadStagedFiles;
+
+function handleLinks() {
+  qaSetMsg('', false);
+  const urls = extractUrls(linksInput.value);
+  if (!urls.length) { qaSetMsg('Enter at least one valid link.', true); return; }
+
+  const fd = new FormData();
+  fd.append('links', urls.join('\\n'));
+  fd.append('tags', tagsInput.value);
+  fd.append('caption', captionInput.value);
+
+  fetch('/upload', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: fd,
+  })
+    .then(async (r) => {
+      if (r.status === 401) { showAuth(true); throw new Error('Wrong password'); }
+      if (!r.ok) throw new Error('Failed to share link');
+      return r.json();
+    })
+    .then(({ files: uploaded }) => {
+      linksInput.value = '';
+      quickAddDone(uploaded.length, 'link');
+    })
+    .catch((err) => qaSetMsg(err.message, true));
+}
+shareLinkBtn.onclick = handleLinks;
+
+function derivePasteTitle(container) {
+  const heading = container.querySelector('h1, h2, h3, h4, h5, h6');
+  let title = (heading ? heading.textContent : container.textContent) || '';
+  title = title.trim().replace(/\\s+/g, ' ').slice(0, 60);
+  return title || 'pasted content';
+}
+
+function wrapAsHtmlDocument(title, bodyHtml) {
+  return '<!doctype html><html><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1">' +
+    '<title>' + escapeHtml(title) + '</title>' +
+    '<style>body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;max-width:700px;margin:40px auto;padding:0 20px;line-height:1.6;color:#1d1d1f;}</style>' +
+    '</head><body>' + bodyHtml + '</body></html>';
+}
+
+function handlePastedContent() {
+  qaSetMsg('', false);
+  const rawHtml = pasteBox.innerHTML.trim();
+  if (!rawHtml) { qaSetMsg('Paste some formatted text first.', true); return; }
+
+  const clean = document.createElement('div');
+  clean.innerHTML = rawHtml;
+  clean.querySelectorAll('img').forEach((img) => img.remove());
+
+  const title = derivePasteTitle(clean);
+  const doc = wrapAsHtmlDocument(title, clean.innerHTML);
+  const blob = new Blob([doc], { type: 'text/html' });
+  const filename = title + '.html';
+
+  const fd = new FormData();
+  fd.append('file', blob, filename);
+  fd.append('tags', tagsInput.value);
+  fd.append('caption', captionInput.value);
+
+  fetch('/upload', {
+    method: 'POST',
+    headers: authHeaders(),
+    body: fd,
+  })
+    .then(async (r) => {
+      if (r.status === 401) { showAuth(true); throw new Error('Wrong password'); }
+      if (!r.ok) throw new Error('Failed to save page');
+      return r.json();
+    })
+    .then(() => {
+      pasteBox.innerHTML = '';
+      quickAddDone(1, 'page');
+    })
+    .catch((err) => qaSetMsg(err.message, true));
+}
+savePasteBtn.onclick = handlePastedContent;
+`;
+
 const ADMIN_PAGE = `<!doctype html>
 <html lang="en">
 <head>
@@ -1070,7 +1383,7 @@ const ADMIN_PAGE = `<!doctype html>
 
   <div id="pagination"></div>
 
-  <a href="/" class="fab" title="Upload files">+</a>
+  ${QUICK_ADD_HTML}
   <button type="button" id="toTopFab" class="fab fab-top" title="Back to top">↑</button>
 
   <div id="lightbox">
@@ -1750,6 +2063,8 @@ function addTag(key, tag) {
     .catch((err) => showBanner(err.message, true));
 }
 
+${QUICK_ADD_JS}
+
 load();
 </script>
 </body>
@@ -1797,6 +2112,8 @@ const GALLERY_PAGE = `<!doctype html>
     </div>
     <button type="button" id="lightboxNext" class="lightbox-nav" title="Next">›</button>
   </div>
+
+  ${QUICK_ADD_HTML}
 
   ${SITE_FOOTER_HTML}
 
@@ -2061,6 +2378,8 @@ function buildScrubber(totalGroups) {
   window.addEventListener('scroll', onScroll, { passive: true });
   onScroll();
 }
+
+${QUICK_ADD_JS}
 
 load();
 </script>
