@@ -958,7 +958,9 @@ function wrapAsHtmlDocument(title, bodyHtml) {
   return '<!doctype html><html><head><meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width, initial-scale=1">' +
     '<title>' + escapeHtml(title) + '</title>' +
-    '<style>body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;max-width:700px;margin:40px auto;padding:0 20px;line-height:1.6;color:#1d1d1f;}img{max-width:100%;height:auto;}</style>' +
+    '<style>body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;max-width:700px;margin:40px auto;padding:0 20px;line-height:1.6;color:#1d1d1f;}' +
+    '@media (min-width:900px){body{max-width:1000px;}}' +
+    'img{max-width:100%;height:auto;cursor:zoom-in;}</style>' +
     '</head><body>' + bodyHtml + '</body></html>';
 }
 
@@ -970,7 +972,13 @@ function handlePastedContent() {
   const clean = document.createElement('div');
   clean.innerHTML = rawHtml;
   clean.querySelectorAll('img').forEach((img) => {
-    if (!/^data:/i.test(img.getAttribute('src') || '')) img.remove();
+    const src = img.getAttribute('src') || '';
+    if (!/^data:/i.test(src)) { img.remove(); return; }
+    const link = document.createElement('a');
+    link.href = src;
+    link.target = '_blank';
+    img.replaceWith(link);
+    link.appendChild(img);
   });
 
   const title = derivePasteTitle(clean);
@@ -1337,7 +1345,9 @@ function wrapAsHtmlDocument(title, bodyHtml) {
   return '<!doctype html><html><head><meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width, initial-scale=1">' +
     '<title>' + escapeHtml(title) + '</title>' +
-    '<style>body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;max-width:700px;margin:40px auto;padding:0 20px;line-height:1.6;color:#1d1d1f;}img{max-width:100%;height:auto;}</style>' +
+    '<style>body{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;max-width:700px;margin:40px auto;padding:0 20px;line-height:1.6;color:#1d1d1f;}' +
+    '@media (min-width:900px){body{max-width:1000px;}}' +
+    'img{max-width:100%;height:auto;cursor:zoom-in;}</style>' +
     '</head><body>' + bodyHtml + '</body></html>';
 }
 
@@ -1349,7 +1359,13 @@ function handlePastedContent() {
   const clean = document.createElement('div');
   clean.innerHTML = rawHtml;
   clean.querySelectorAll('img').forEach((img) => {
-    if (!/^data:/i.test(img.getAttribute('src') || '')) img.remove();
+    const src = img.getAttribute('src') || '';
+    if (!/^data:/i.test(src)) { img.remove(); return; }
+    const link = document.createElement('a');
+    link.href = src;
+    link.target = '_blank';
+    img.replaceWith(link);
+    link.appendChild(img);
   });
 
   const title = derivePasteTitle(clean);
@@ -2573,7 +2589,8 @@ async function sanitizeHtml(bytes) {
         if (name.toLowerCase().startsWith('on')) el.removeAttribute(name);
       }
       const href = el.getAttribute('href');
-      if (href && /^\s*(javascript|data):/i.test(href)) el.removeAttribute('href');
+      // data:image/ hrefs are as safe as data: <img src> (no script execution); still block other data: and javascript:.
+      if (href && /^\s*(javascript:|data:(?!image\/))/i.test(href)) el.removeAttribute('href');
       const src = el.getAttribute('src');
       // data: is safe for <img> (no script execution in that context); still block it elsewhere.
       const isImg = el.tagName.toLowerCase() === 'img';
