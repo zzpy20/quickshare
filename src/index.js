@@ -933,6 +933,19 @@ function derivePasteTitle(container) {
   return title || 'pasted content';
 }
 
+function slugifyFilename(title) {
+  const slug = title
+    .normalize('NFKD')
+    .replace(/[\\u0300-\\u036f]/g, '')
+    .replace(/[^A-Za-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase()
+    .slice(0, 60);
+  if (slug) return slug;
+  const bytes = crypto.getRandomValues(new Uint8Array(4));
+  return 'page-' + [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 function wrapAsHtmlDocument(title, bodyHtml) {
   return '<!doctype html><html><head><meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width, initial-scale=1">' +
@@ -953,7 +966,7 @@ function handlePastedContent() {
   const title = derivePasteTitle(clean);
   const doc = wrapAsHtmlDocument(title, clean.innerHTML);
   const blob = new Blob([doc], { type: 'text/html' });
-  const filename = title + '.html';
+  const filename = slugifyFilename(title) + '.html';
 
   const row = document.createElement('div');
   row.className = 'row';
@@ -1295,6 +1308,19 @@ function derivePasteTitle(container) {
   return title || 'pasted content';
 }
 
+function slugifyFilename(title) {
+  const slug = title
+    .normalize('NFKD')
+    .replace(/[\\u0300-\\u036f]/g, '')
+    .replace(/[^A-Za-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase()
+    .slice(0, 60);
+  if (slug) return slug;
+  const bytes = crypto.getRandomValues(new Uint8Array(4));
+  return 'page-' + [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 function wrapAsHtmlDocument(title, bodyHtml) {
   return '<!doctype html><html><head><meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width, initial-scale=1">' +
@@ -1315,7 +1341,7 @@ function handlePastedContent() {
   const title = derivePasteTitle(clean);
   const doc = wrapAsHtmlDocument(title, clean.innerHTML);
   const blob = new Blob([doc], { type: 'text/html' });
-  const filename = title + '.html';
+  const filename = slugifyFilename(title) + '.html';
 
   const fd = new FormData();
   fd.append('file', blob, filename);
