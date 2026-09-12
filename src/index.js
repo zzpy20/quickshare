@@ -166,6 +166,8 @@ const STYLE = `
   .group { border: 1px solid #e5e5ea; border-radius: 12px; padding: 12px; margin-bottom: 14px; overflow: hidden; }
   @media (prefers-color-scheme: dark) { .group { border-color: #38383a; } .file-row { border-top-color: #2c2c2e !important; } }
   .group-head { display: flex; align-items: center; gap: 10px; row-gap: 6px; flex-wrap: wrap; margin-bottom: 8px; font-size: 12px; color: #86868b; }
+  .entry-id { font-family: ui-monospace, monospace; color: #1d1d1f; font-weight: 600; }
+  @media (prefers-color-scheme: dark) { .entry-id { color: #f5f5f7; } }
   .file-row { padding: 8px 0; font-size: 13px; border-top: 1px solid #f0f0f2; }
   .file-row:first-of-type { border-top: none; }
   .file-row-top { display: flex; align-items: center; gap: 10px; }
@@ -1603,6 +1605,7 @@ function load() {
 function fileMatchesFilters(f) {
   const matchesSearch = !searchTerm ||
     f.name.toLowerCase().includes(searchTerm) ||
+    (f.id && f.id.toLowerCase().includes(searchTerm)) ||
     (f.caption && f.caption.toLowerCase().includes(searchTerm));
   const matchesTag = !activeTag || (f.tags || []).includes(activeTag);
   const matchesType = activeType === 'all' || classifyType(f.contentType) === activeType;
@@ -1686,15 +1689,18 @@ function render() {
     const shownHint = files.length !== fullCount ? ' · ' + files.length + ' shown' : '';
     const isBatch = batchIds.includes(id);
     const batchArchived = isBatch && files.length > 0 && files.every((f) => f.archived);
+    const idBadge = '<span class="entry-id">ID: ' + escapeHtml(id) + '</span>' +
+      '<button type="button" class="secondary small copy-id" data-id="' + escapeHtml(id) + '">Copy ID</button>';
     const head = isBatch
       ? '<div class="group-head"><span>📦 batch of ' + fullCount + shownHint + '</span>' +
+        idBadge +
         '<a href="/b/' + id + '" target="_blank">open batch</a>' +
         '<button class="secondary small copy-batch" data-url="' + location.origin + '/b/' + id + '">Copy batch link</button>' +
         '<button class="secondary small copy-batch-all" data-id="' + id + '">Copy all links</button>' +
         '<button class="secondary small email-batch" data-id="' + id + '">Email batch</button>' +
         '<button class="secondary small archive-batch' + (batchArchived ? ' active' : '') + '" data-id="' + id + '" data-archived="' + (batchArchived ? '1' : '') + '">' + (batchArchived ? 'Unarchive batch' : 'Archive batch') + '</button>' +
         '<button class="secondary small delete-batch" data-id="' + id + '">Delete batch</button></div>'
-      : '<div class="group-head"><span>single file</span></div>';
+      : '<div class="group-head"><span>single file</span>' + idBadge + '</div>';
 
     const rows = files.map((f) => {
       const full = location.origin + f.url;
@@ -1778,6 +1784,9 @@ function render() {
   });
   groupsEl.querySelectorAll('.copy-batch, .copy-file').forEach((btn) => {
     btn.onclick = (e) => copyToClipboard(e.target, e.target.dataset.url);
+  });
+  groupsEl.querySelectorAll('.copy-id').forEach((btn) => {
+    btn.onclick = (e) => copyToClipboard(e.target, e.target.dataset.id);
   });
   groupsEl.querySelectorAll('.copy-batch-all').forEach((btn) => {
     btn.onclick = (e) => {
@@ -2471,9 +2480,14 @@ load();
 </body>
 </html>`;
 
+const ID_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ'; // no 0/O or 1/I/L — easy to read and type
 function randomId() {
-  const bytes = crypto.getRandomValues(new Uint8Array(6));
-  return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const datePart = d.getUTCFullYear() + pad(d.getUTCMonth() + 1) + pad(d.getUTCDate());
+  const bytes = crypto.getRandomValues(new Uint8Array(7));
+  const randPart = [...bytes].map((b) => ID_ALPHABET[b % ID_ALPHABET.length]).join('');
+  return datePart + '-' + randPart;
 }
 
 function sanitizeFilename(name) {
