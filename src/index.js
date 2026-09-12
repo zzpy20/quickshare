@@ -1691,6 +1691,7 @@ function render() {
         '<a href="/b/' + id + '" target="_blank">open batch</a>' +
         '<button class="secondary small copy-batch" data-url="' + location.origin + '/b/' + id + '">Copy batch link</button>' +
         '<button class="secondary small copy-batch-all" data-id="' + id + '">Copy all links</button>' +
+        '<button class="secondary small email-batch" data-id="' + id + '">Email batch</button>' +
         '<button class="secondary small archive-batch' + (batchArchived ? ' active' : '') + '" data-id="' + id + '" data-archived="' + (batchArchived ? '1' : '') + '">' + (batchArchived ? 'Unarchive batch' : 'Archive batch') + '</button>' +
         '<button class="secondary small delete-batch" data-id="' + id + '">Delete batch</button></div>'
       : '<div class="group-head"><span>single file</span></div>';
@@ -1745,6 +1746,7 @@ function render() {
         '<a href="' + escapeHtml(full) + '" target="_blank" class="action-btn small">open</a>' +
         '<button class="secondary small copy-file" data-url="' + escapeHtml(f.linkTarget || full) + '">Copy links</button>' +
         '<button class="secondary small regen" data-key="' + key + '">Regenerate links</button>' +
+        (isBatch ? '' : '<button class="secondary small email-file" data-id="' + escapeHtml(f.id) + '">Email</button>') +
         '<button type="button" class="secondary small archive-toggle' + (f.archived ? ' active' : '') + '" data-id="' + escapeHtml(f.id) + '" data-archived="' + (f.archived ? '1' : '') + '" title="' + (f.archived ? 'Unarchive this entry' : 'Archive this entry') + '">' + (f.archived ? 'Unarchive' : 'Archive') + '</button>' +
         '<button class="secondary small del" data-key="' + key + '">Delete</button>' +
         '</div>' +
@@ -1767,6 +1769,12 @@ function render() {
   });
   groupsEl.querySelectorAll('.archive-toggle, .archive-batch').forEach((btn) => {
     btn.onclick = () => toggleArchived(btn.dataset.id, !btn.dataset.archived);
+  });
+  groupsEl.querySelectorAll('.email-batch').forEach((btn) => {
+    btn.onclick = () => emailEntry(btn.dataset.id, 'batch');
+  });
+  groupsEl.querySelectorAll('.email-file').forEach((btn) => {
+    btn.onclick = () => emailEntry(btn.dataset.id, 'entry');
   });
   groupsEl.querySelectorAll('.copy-batch, .copy-file').forEach((btn) => {
     btn.onclick = (e) => copyToClipboard(e.target, e.target.dataset.url);
@@ -1926,12 +1934,8 @@ combineBtn.onclick = async () => {
     .catch((err) => showBanner(err.message, true));
 };
 
-emailBtn.onclick = async () => {
-  const touchedIds = [...new Set([...selected].map((k) => k.slice(0, k.indexOf('/'))))];
-  if (touchedIds.length !== 1) return;
-  const id = touchedIds[0];
-
-  const ok = await confirmDialog('Email this entry to zzpy20@gmail.com?', 'Send');
+async function emailEntry(id, label) {
+  const ok = await confirmDialog('Email this ' + label + ' to zzpy20@gmail.com?', 'Send');
   if (!ok) return;
 
   fetch('/admin/email-entry', {
@@ -1942,6 +1946,12 @@ emailBtn.onclick = async () => {
     .then((r) => { if (!r.ok) throw new Error('Email failed'); })
     .then(() => showToast('✓ Emailed to zzpy20@gmail.com'))
     .catch((err) => showBanner(err.message, true));
+}
+
+emailBtn.onclick = () => {
+  const touchedIds = [...new Set([...selected].map((k) => k.slice(0, k.indexOf('/'))))];
+  if (touchedIds.length !== 1) return;
+  emailEntry(touchedIds[0], 'entry');
 };
 
 searchBox.oninput = () => {
