@@ -1864,7 +1864,12 @@ function updateBulkButton(visibleFiles) {
     combineBtn.style.display = 'none';
   }
 
-  emailBtn.style.display = touchedIds.size === 1 ? 'inline-block' : 'none';
+  if (touchedIds.size >= 1) {
+    emailBtn.style.display = 'inline-block';
+    emailBtn.textContent = touchedIds.size === 1 ? 'Email selected' : 'Email selected (' + touchedIds.size + ' entries)';
+  } else {
+    emailBtn.style.display = 'none';
+  }
 }
 
 selectAllBox.onchange = () => {
@@ -1934,24 +1939,50 @@ combineBtn.onclick = async () => {
     .catch((err) => showBanner(err.message, true));
 };
 
+function sendEntryEmailRequest(id) {
+  return fetch('/admin/email-entry', {
+    method: 'POST',
+    headers: Object.assign({ 'content-type': 'application/json' }, authHeaders()),
+    body: JSON.stringify({ id }),
+  }).then((r) => { if (!r.ok) throw new Error('Email failed'); });
+}
+
 async function emailEntry(id, label) {
   const ok = await confirmDialog('Email this ' + label + ' to zzpy20@gmail.com?', 'Send');
   if (!ok) return;
 
-  fetch('/admin/email-entry', {
-    method: 'POST',
-    headers: Object.assign({ 'content-type': 'application/json' }, authHeaders()),
-    body: JSON.stringify({ id }),
-  })
-    .then((r) => { if (!r.ok) throw new Error('Email failed'); })
+  sendEntryEmailRequest(id)
     .then(() => showToast('✓ Emailed to zzpy20@gmail.com'))
     .catch((err) => showBanner(err.message, true));
 }
 
-emailBtn.onclick = () => {
+emailBtn.onclick = async () => {
   const touchedIds = [...new Set([...selected].map((k) => k.slice(0, k.indexOf('/'))))];
-  if (touchedIds.length !== 1) return;
-  emailEntry(touchedIds[0], 'entry');
+  if (!touchedIds.length) return;
+  const plural = touchedIds.length === 1 ? 'this entry' : 'these ' + touchedIds.length + ' entries';
+
+  const ok = await confirmDialog('Email ' + plural + ' to zzpy20@gmail.com?', 'Send');
+  if (!ok) return;
+
+  const originalText = emailBtn.textContent;
+  emailBtn.disabled = true;
+  let failed = 0;
+  for (let i = 0; i < touchedIds.length; i++) {
+    emailBtn.textContent = 'Sending ' + (i + 1) + '/' + touchedIds.length + '…';
+    try {
+      await sendEntryEmailRequest(touchedIds[i]);
+    } catch (e) {
+      failed++;
+    }
+  }
+  emailBtn.disabled = false;
+  emailBtn.textContent = originalText;
+
+  if (failed) {
+    showBanner(failed + ' of ' + touchedIds.length + ' email(s) failed to send', true);
+  } else {
+    showToast('✓ Emailed ' + touchedIds.length + ' ' + (touchedIds.length === 1 ? 'entry' : 'entries') + ' to zzpy20@gmail.com');
+  }
 };
 
 searchBox.oninput = () => {
