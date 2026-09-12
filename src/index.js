@@ -2598,10 +2598,32 @@ async function sendEntryEmail(env, origin, id, files) {
   const isBatch = files.length > 1;
   const link = origin + (isBatch ? '/b/' + id : ('/f/' + id + '/' + encodeURIComponent(files[0].name)));
   const subject = 'quickshare: ' + (isBatch ? 'batch of ' + files.length + ' files' : files[0].name);
-  const fileListHtml = files.map((f) =>
-    '<li>' + escapeHtmlServer(f.name) + (f.caption ? ' — ' + escapeHtmlServer(f.caption) : '') + '</li>'
-  ).join('');
-  const html = '<p><a href="' + link + '">' + link + '</a></p><ul>' + fileListHtml + '</ul>';
+
+  const itemsHtml = files.map((f) => {
+    const url = origin + '/f/' + id + '/' + encodeURIComponent(f.name);
+    const isLink = f.type === LINK_CONTENT_TYPE;
+    const isImage = (f.type || '').startsWith('image/');
+    const preview = isImage
+      ? '<img src="' + url + '" style="max-width:100%;border-radius:8px;display:block;margin-bottom:8px;">'
+      : '';
+    const nameDisplay = (isLink ? '🔗 ' : '') + escapeHtmlServer(f.name) +
+      (f.caption ? ' — ' + escapeHtmlServer(f.caption) : '');
+    return (
+      '<div style="background:#f5f5f7;border-radius:10px;padding:14px 16px;margin-bottom:10px;' +
+      'font-family:-apple-system,BlinkMacSystemFont,sans-serif;">' +
+      preview +
+      '<div style="display:flex;align-items:center;gap:10px;">' +
+      '<div style="flex:1;font-size:14px;color:#1d1d1f;">' + nameDisplay + '</div>' +
+      '<a href="' + url + '" style="background:#e8e8ed;color:#1d1d1f;padding:6px 14px;border-radius:8px;' +
+      'font-size:13px;font-weight:600;text-decoration:none;white-space:nowrap;">open</a>' +
+      '</div></div>'
+    );
+  }).join('');
+
+  const html =
+    '<p style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;">' +
+    '<a href="' + link + '">' + link + '</a></p>' +
+    itemsHtml;
 
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -2904,6 +2926,7 @@ export default {
       const files = objects.map((o) => ({
         name: o.key.slice(id.length + 1),
         caption: (o.customMetadata && o.customMetadata.caption) || '',
+        type: (o.httpMetadata && o.httpMetadata.contentType) || '',
       }));
       try {
         await sendEntryEmail(env, url.origin, id, files);
@@ -3206,7 +3229,7 @@ export default {
     }
 
     try {
-      await sendEntryEmail(env, 'https://share.1000600.xyz', id, manifest.map((m) => ({ name: m.name, caption: '' })));
+      await sendEntryEmail(env, 'https://share.1000600.xyz', id, manifest.map((m) => ({ name: m.name, caption: '', type: m.type })));
     } catch (e) {
       // upload already succeeded even if the notification failed
     }
