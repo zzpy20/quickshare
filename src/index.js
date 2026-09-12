@@ -92,6 +92,12 @@ const STYLE = `
   }
   button:hover { background: #0077ed; }
   button.secondary { background: #e8e8ed; color: #1d1d1f; }
+  a.action-btn {
+    display: inline-flex; align-items: center; padding: 10px 16px; border-radius: 10px;
+    background: #e8e8ed; color: #1d1d1f; font-size: 14px; font-weight: 500; text-decoration: none;
+  }
+  a.action-btn:hover { background: #dcdce1; }
+  a.action-btn.small { padding: 5px 10px; font-size: 12px; }
   #uploadTabs { display: flex; flex-wrap: wrap; gap: 8px; }
   .upload-tab {
     padding: 6px 14px; border-radius: 999px; background: #e8e8ed; color: #1d1d1f;
@@ -818,7 +824,7 @@ function renderUploadResults(rows, uploaded, batchUrl, batchLabel) {
     row.className = 'row';
     row.innerHTML =
       '<div class="name">' + escapeHtml(u.name) + '</div>' +
-      '<a href="' + escapeHtml(full) + '" target="_blank">open</a>' +
+      '<a href="' + escapeHtml(full) + '" target="_blank" class="action-btn">open</a>' +
       '<button class="secondary copy-btn" data-url="' + escapeHtml(u.linkTarget || full) + '">Copy links</button>';
     row.querySelector('.copy-btn').onclick = (e) => copyToClipboard(e.target, e.target.dataset.url);
   });
@@ -828,7 +834,7 @@ function renderUploadResults(rows, uploaded, batchUrl, batchLabel) {
     brow.className = 'row batch';
     brow.innerHTML =
       '<div class="name">📦 these ' + uploaded.length + ' ' + (batchLabel || 'files') + ' together</div>' +
-      '<a href="' + full + '" target="_blank">open</a>' +
+      '<a href="' + full + '" target="_blank" class="action-btn">open</a>' +
       '<button class="secondary copy-btn" data-url="' + full + '">Copy links</button>';
     brow.querySelector('.copy-btn').onclick = (e) => copyToClipboard(e.target, e.target.dataset.url);
     list.prepend(brow);
@@ -1028,7 +1034,7 @@ function batchPage(id, manifest) {
         preview +
         '<div style="display:flex;align-items:center;gap:10px;">' +
         '<div class="name">' + nameDisplay + '</div>' +
-        '<a href="' + url + '" target="_blank">open</a>' +
+        '<a href="' + url + '" target="_blank" class="action-btn">open</a>' +
         '</div></div>'
       );
     })
@@ -1732,7 +1738,7 @@ function render() {
         tagPills +
         addTagSlot +
         '<div class="meta">' + fmtSize(f.size) + ' · ' + fmtDate(f.uploaded) + '</div>' +
-        '<a href="' + escapeHtml(full) + '" target="_blank">open</a>' +
+        '<a href="' + escapeHtml(full) + '" target="_blank" class="action-btn small">open</a>' +
         '<button class="secondary small copy-file" data-url="' + escapeHtml(f.linkTarget || full) + '">Copy links</button>' +
         '<button class="secondary small regen" data-key="' + key + '">Regenerate links</button>' +
         '<button type="button" class="secondary small archive-toggle' + (f.archived ? ' active' : '') + '" data-id="' + escapeHtml(f.id) + '" data-archived="' + (f.archived ? '1' : '') + '" title="' + (f.archived ? 'Unarchive this entry' : 'Archive this entry') + '">' + (f.archived ? 'Unarchive' : 'Archive') + '</button>' +
