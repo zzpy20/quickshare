@@ -2676,7 +2676,9 @@ async function sendEntryEmail(env, origin, id, files) {
   }).join('');
 
   const html =
-    '<p style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;">' +
+    '<p style="font-family:ui-monospace,monospace;font-size:13px;color:#1d1d1f;margin:0 0 4px;">' +
+    'ID: ' + escapeHtmlServer(id) + '</p>' +
+    '<p style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;margin:0 0 14px;">' +
     '<a href="' + link + '">' + link + '</a></p>' +
     itemsHtml;
 
