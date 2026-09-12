@@ -2485,7 +2485,7 @@ function randomId() {
   const datePart = new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Brisbane' })
     .format(new Date())
     .replace(/-/g, '');
-  const bytes = crypto.getRandomValues(new Uint8Array(7));
+  const bytes = crypto.getRandomValues(new Uint8Array(10));
   const randPart = [...bytes].map((b) => ID_ALPHABET[b % ID_ALPHABET.length]).join('');
   return datePart + '-' + randPart;
 }
