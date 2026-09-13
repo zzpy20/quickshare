@@ -2705,6 +2705,10 @@ const LINK_CONTENT_TYPE = 'text/x-quickshare-link';
 
 async function discoverOgImage(url) {
   if (!url) return null;
+  let hostname;
+  try { hostname = new URL(url).hostname; } catch (e) { return null; }
+  const faviconFallback = 'https://www.google.com/s2/favicons?sz=128&domain=' + encodeURIComponent(hostname);
+
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
@@ -2713,7 +2717,7 @@ async function discoverOgImage(url) {
       headers: { 'user-agent': 'Mozilla/5.0 (compatible; quickshare-preview)' },
     });
     clearTimeout(timeout);
-    if (!res.ok) return null;
+    if (!res.ok) return faviconFallback;
 
     let found = null;
     const rewriter = new HTMLRewriter().on('meta', {
@@ -2731,9 +2735,10 @@ async function discoverOgImage(url) {
     if (found && !/^https?:\/\//i.test(found)) {
       try { found = new URL(found, url).toString(); } catch (e) { found = null; }
     }
-    return found;
+    // ogImage may end up holding an actual og:image/twitter:image, or this favicon fallback
+    return found || faviconFallback;
   } catch (e) {
-    return null;
+    return faviconFallback;
   }
 }
 
@@ -3439,12 +3444,12 @@ export default {
             const imgRes = await fetch(ogImage, {
               headers: { 'user-agent': 'Mozilla/5.0 (compatible; quickshare-preview)' },
             });
-            if (!imgRes.ok || !imgRes.body) return new Response('Not found', { status: 404 });
+            const imgCt = imgRes.headers.get('content-type') || '';
+            // Google's favicon service can return a fallback icon on a non-2xx status —
+            // trust the content-type, not the status code, to decide if we got an image.
+            if (!imgRes.body || !imgCt.startsWith('image/')) return new Response('Not found', { status: 404 });
             return new Response(imgRes.body, {
-              headers: {
-                'content-type': imgRes.headers.get('content-type') || 'image/jpeg',
-                'cache-control': 'public, max-age=86400',
-              },
+              headers: { 'content-type': imgCt, 'cache-control': 'public, max-age=86400' },
             });
           } catch (e) {
             return new Response('Not found', { status: 404 });
