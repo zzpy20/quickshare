@@ -44,10 +44,11 @@ const STYLE = `
     font-size: 12px; cursor: pointer; border: none; font-weight: 500;
   }
   .tag-chip.active { background: #0071e3; color: #fff; }
-  #highlightFilter { margin: 8px 0 0; }
+  #statusFilters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 8px 0 0; }
   .highlight-filter-chip.active { background: #ffd60a !important; color: #1d1d1f !important; }
-  #archivedFilter { margin: 8px 0 0; }
   .archived-filter-chip.active { background: #5856d6 !important; color: #fff !important; font-weight: 700; }
+  #archivedFilter::before, #lockedFilter::before { content: '|'; color: #86868b; margin-right: 8px; }
+  .highlight-filter-chip, .archived-filter-chip, .locked-filter-chip { font-size: 14px; }
   .archive-toggle.active, button.archive-batch.active { background: #5856d6 !important; color: #fff !important; }
   .file-tag {
     padding: 2px 6px 2px 9px; border-radius: 999px; background: #e8e8ed; font-size: 11px;
@@ -1412,11 +1413,11 @@ const ADMIN_PAGE = `<!doctype html>
 
   <div id="tagFilters"></div>
 
-  <div id="highlightFilter"></div>
-
-  <div id="archivedFilter"></div>
-
-  <div id="lockedFilter"></div>
+  <div id="statusFilters">
+    <div id="highlightFilter"></div>
+    <div id="archivedFilter"></div>
+    <div id="lockedFilter"></div>
+  </div>
 
   <div id="lockAuth">
     <input type="password" id="lockTokenInput" placeholder="Locked folder password">
