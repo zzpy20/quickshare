@@ -239,6 +239,22 @@ const STYLE = `
   #confirmActions { display: flex; justify-content: flex-end; gap: 8px; }
   #confirmOk { background: #ff3b30; }
   #confirmOk:hover { background: #ff2d1f; }
+  #previewOverlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+    align-items: center; justify-content: center; z-index: 3000; padding: 20px;
+  }
+  #previewOverlay.open { display: flex; }
+  #previewBox {
+    background: #fff; border-radius: 14px; box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+    width: 100%; max-width: 1000px; height: 85vh; display: flex; flex-direction: column; overflow: hidden;
+  }
+  @media (prefers-color-scheme: dark) { #previewBox { background: #2c2c2e; } }
+  #previewHead {
+    display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+    padding: 10px 12px; border-bottom: 1px solid #e5e5ea;
+  }
+  @media (prefers-color-scheme: dark) { #previewHead { border-bottom-color: #38383a; } }
+  #previewFrame { flex: 1; width: 100%; border: none; background: #fff; }
   .lightbox-nav {
     position: fixed; top: 50%; transform: translateY(-50%);
     width: 44px; height: 44px; border-radius: 50%; background: rgba(255,255,255,0.15);
@@ -1467,6 +1483,16 @@ const ADMIN_PAGE = `<!doctype html>
     <button type="button" id="lightboxNext" class="lightbox-nav" title="Next">›</button>
   </div>
 
+  <div id="previewOverlay">
+    <div id="previewBox">
+      <div id="previewHead">
+        <a id="previewOpenNew" href="#" target="_blank" rel="noopener" class="secondary small">Open in new tab</a>
+        <button type="button" id="previewClose" class="secondary small">Close</button>
+      </div>
+      <iframe id="previewFrame"></iframe>
+    </div>
+  </div>
+
   <div id="confirmOverlay">
     <div id="confirmBox">
       <p id="confirmMessage"></p>
@@ -1492,6 +1518,8 @@ const lockAuthBox = $('lockAuth'), lockTokenInput = $('lockTokenInput'), unlockS
 const lightbox = $('lightbox'), lightboxMedia = $('lightboxMedia');
 const confirmOverlay = $('confirmOverlay'), confirmMessageEl = $('confirmMessage');
 const confirmCancelBtn = $('confirmCancel'), confirmOkBtn = $('confirmOk');
+const previewOverlay = $('previewOverlay'), previewFrame = $('previewFrame');
+const previewOpenNew = $('previewOpenNew'), previewCloseBtn = $('previewClose');
 const toTopFab = $('toTopFab');
 
 window.addEventListener('scroll', () => {
@@ -1525,6 +1553,21 @@ function confirmDialog(message, okLabel) {
     document.addEventListener('keydown', onKey);
   });
 }
+
+function openPreview(url) {
+  previewFrame.src = url;
+  previewOpenNew.href = url;
+  previewOverlay.classList.add('open');
+}
+function closePreview() {
+  previewOverlay.classList.remove('open');
+  previewFrame.src = 'about:blank';
+}
+previewCloseBtn.onclick = closePreview;
+previewOverlay.onclick = (e) => { if (e.target === previewOverlay) closePreview(); };
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && previewOverlay.classList.contains('open')) closePreview();
+});
 
 ${AUTH_JS}
 ${LIGHTBOX_JS}
@@ -1823,6 +1866,7 @@ function render() {
         addTagSlot +
         '<div class="meta">' + fmtSize(f.size) + ' · ' + fmtDate(f.uploaded) + '</div>' +
         '<a href="' + escapeHtml(full) + '" target="_blank" class="action-btn small">open</a>' +
+        (isLink && f.linkTarget ? '<button type="button" class="secondary small preview-link" data-url="' + escapeHtml(f.linkTarget) + '">Preview</button>' : '') +
         '<button class="secondary small copy-file" data-url="' + escapeHtml(f.linkTarget || full) + '">Copy links</button>' +
         '<button class="secondary small regen" data-key="' + key + '">Regenerate links</button>' +
         (isBatch ? '' : '<button class="secondary small email-file" data-id="' + escapeHtml(f.id) + '">Email</button>') +
@@ -1861,6 +1905,9 @@ function render() {
   });
   groupsEl.querySelectorAll('.copy-batch, .copy-file').forEach((btn) => {
     btn.onclick = (e) => copyToClipboard(e.target, e.target.dataset.url);
+  });
+  groupsEl.querySelectorAll('.preview-link').forEach((btn) => {
+    btn.onclick = () => openPreview(btn.dataset.url);
   });
   groupsEl.querySelectorAll('.copy-id').forEach((btn) => {
     btn.onclick = (e) => copyToClipboard(e.target, e.target.dataset.id);
@@ -3373,6 +3420,29 @@ export default {
         return Response.json({ error: 'wrong password' }, { status: 401 });
       }
       return Response.json({ ok: true });
+    }
+
+    if (request.method === 'POST' && pathname === '/admin/clear-favicon-cache') {
+      if (!checkToken(request, env)) {
+        return Response.json({ error: 'unauthorized' }, { status: 401 });
+      }
+      const objects = await listAllObjects(env.SHARE_R2);
+      let count = 0;
+      for (const o of objects) {
+        const ct = o.httpMetadata && o.httpMetadata.contentType;
+        const cm = o.customMetadata || {};
+        if (ct !== LINK_CONTENT_TYPE || cm.ogImage !== '') continue;
+        const object = await env.SHARE_R2.get(o.key);
+        if (!object) continue;
+        const newCm = Object.assign({}, object.customMetadata);
+        delete newCm.ogImage;
+        await env.SHARE_R2.put(o.key, object.body, {
+          httpMetadata: object.httpMetadata,
+          customMetadata: newCm,
+        });
+        count++;
+      }
+      return Response.json({ ok: true, count });
     }
 
     if (request.method === 'POST' && pathname === '/admin/add-tag') {
