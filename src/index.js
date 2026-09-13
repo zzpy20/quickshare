@@ -27,6 +27,8 @@ const STYLE = `
   h1 { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
   p.sub { color: #86868b; margin-top: 0; font-size: 14px; }
   #auth { display: flex; gap: 8px; margin: 20px 0; }
+  #lockAuth { display: none; gap: 8px; margin: 10px 0; }
+  #lockAuth.show { display: flex; }
   input[type=password], input[type=search], .meta-input {
     flex: 1; padding: 10px 12px; border-radius: 10px; border: 1px solid #d2d2d7;
     font-size: 14px; width: 100%;
@@ -1414,10 +1416,18 @@ const ADMIN_PAGE = `<!doctype html>
 
   <div id="archivedFilter"></div>
 
+  <div id="lockedFilter"></div>
+
+  <div id="lockAuth">
+    <input type="password" id="lockTokenInput" placeholder="Locked folder password">
+    <button id="unlockSubmit">Unlock</button>
+  </div>
+
   <div id="toolbar">
     <label><input type="checkbox" id="selectAll"> Select all on page</label>
     <button id="bulkDelete" class="secondary" style="display:none;">Delete selected</button>
     <button id="bulkArchive" class="secondary" style="display:none;">Archive selected</button>
+    <button id="bulkLock" class="secondary" style="display:none;">Lock selected</button>
     <button id="bulkCombine" class="secondary" style="display:none;">Combine selected</button>
     <button id="bulkEmail" class="secondary" style="display:none;">Email selected</button>
     <button id="refresh" class="secondary">Refresh</button>
@@ -1460,12 +1470,14 @@ const ADMIN_PAGE = `<!doctype html>
 
 <script>
 const $ = (id) => document.getElementById(id);
-const banner = $('banner'), groupsEl = $('groups'), bulkBtn = $('bulkDelete'), archiveBtn = $('bulkArchive'), combineBtn = $('bulkCombine'), emailBtn = $('bulkEmail'), selectAllBox = $('selectAll');
+const banner = $('banner'), groupsEl = $('groups'), bulkBtn = $('bulkDelete'), archiveBtn = $('bulkArchive'), combineBtn = $('bulkCombine'), emailBtn = $('bulkEmail'), lockBtn = $('bulkLock'), selectAllBox = $('selectAll');
 const searchBox = $('searchBox'), paginationEl = $('pagination'), resultsSummary = $('resultsSummary');
 const tagFiltersEl = $('tagFilters');
 const typeFiltersEl = $('typeFilters');
 const highlightFilterEl = $('highlightFilter');
 const archivedFilterEl = $('archivedFilter');
+const lockedFilterEl = $('lockedFilter');
+const lockAuthBox = $('lockAuth'), lockTokenInput = $('lockTokenInput'), unlockSubmitBtn = $('unlockSubmit');
 const lightbox = $('lightbox'), lightboxMedia = $('lightboxMedia');
 const confirmOverlay = $('confirmOverlay'), confirmMessageEl = $('confirmMessage');
 const confirmCancelBtn = $('confirmCancel'), confirmOkBtn = $('confirmOk');
@@ -1516,6 +1528,7 @@ let activeTag = null;
 let activeType = 'all';
 let activeHighlightOnly = false;
 let activeArchivedOnly = false;
+let activeLockedOnly = false;
 let currentPage = 1;
 const PAGE_SIZE = 20;
 const selected = new Set();
@@ -1567,6 +1580,40 @@ function renderArchivedFilter() {
   };
 }
 
+function renderLockedFilter() {
+  lockedFilterEl.innerHTML =
+    '<button type="button" class="tag-chip locked-filter-chip' + (activeLockedOnly ? ' active' : '') + '">🔒 Locked</button>';
+  lockedFilterEl.querySelector('.locked-filter-chip').onclick = () => {
+    if (!activeLockedOnly && !sessionStorage.getItem('quickshare_lock_token')) {
+      lockAuthBox.classList.add('show');
+      lockTokenInput.focus();
+      return;
+    }
+    activeLockedOnly = !activeLockedOnly;
+    currentPage = 1;
+    render();
+  };
+}
+
+unlockSubmitBtn.onclick = () => {
+  const token = lockTokenInput.value;
+  fetch('/admin/verify-lock', {
+    method: 'POST',
+    headers: Object.assign({ 'content-type': 'application/json' }, authHeaders(), { 'x-lock-token': token }),
+  })
+    .then((r) => { if (!r.ok) throw new Error('Wrong password'); })
+    .then(() => {
+      sessionStorage.setItem('quickshare_lock_token', token);
+      lockTokenInput.value = '';
+      lockAuthBox.classList.remove('show');
+      activeLockedOnly = true;
+      currentPage = 1;
+      load();
+    })
+    .catch((err) => showBanner(err.message, true));
+};
+lockTokenInput.onkeydown = (e) => { if (e.key === 'Enter') unlockSubmitBtn.click(); };
+
 function fmtSize(bytes) {
   if (bytes < 1024) return bytes + ' B';
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
@@ -1582,10 +1629,17 @@ function fmtExpiry(deleteAt) {
   return 'expires in ' + hours + 'h ' + mins + 'm';
 }
 
+function adminAuthHeaders() {
+  const headers = authHeaders();
+  const lockToken = sessionStorage.getItem('quickshare_lock_token');
+  if (lockToken) headers['x-lock-token'] = lockToken;
+  return headers;
+}
+
 function load() {
   groupsEl.innerHTML = '';
   showBanner('', false);
-  fetch('/admin/list', { headers: authHeaders() })
+  fetch('/admin/list', { headers: adminAuthHeaders() })
     .then(async (r) => {
       if (r.status === 401) { showAuth(true); throw new Error('Wrong password'); }
       if (!r.ok) throw new Error('Failed to load');
@@ -1617,10 +1671,12 @@ function computeView() {
   const byId = {};
   allFiles.forEach((f) => { (byId[f.id] = byId[f.id] || []).push(f); });
 
-  const hasFilter = !!searchTerm || !!activeTag || activeType !== 'all' || activeHighlightOnly || activeArchivedOnly;
+  const hasFilter = !!searchTerm || !!activeTag || activeType !== 'all' || activeHighlightOnly || activeArchivedOnly || activeLockedOnly;
   const displayById = {};
   Object.keys(byId).forEach((id) => {
     const archivedSplit = byId[id].filter((f) => {
+      if (activeLockedOnly) return f.locked;
+      if (f.locked) return false;
       if (activeArchivedOnly) return f.archived;
       if (searchTerm) return true;
       return !f.archived;
@@ -1654,6 +1710,7 @@ function render() {
   renderTagFilters();
   renderHighlightFilter();
   renderArchivedFilter();
+  renderLockedFilter();
 
   if (!allFiles.length) {
     groupsEl.innerHTML = '<p class="sub">No files yet.</p>';
@@ -1671,6 +1728,7 @@ function render() {
     activeType !== 'all' ? (TYPE_DEFS.find((t) => t.key === activeType) || {}).label : null,
     activeHighlightOnly ? 'highlighted' : null,
     activeArchivedOnly ? 'archived' : null,
+    activeLockedOnly ? 'locked' : null,
   ].filter(Boolean).join(' + ');
   resultsSummary.textContent = filterLabel
     ? totalFileCount + ' file(s) match ' + filterLabel
@@ -1689,6 +1747,7 @@ function render() {
     const shownHint = files.length !== fullCount ? ' · ' + files.length + ' shown' : '';
     const isBatch = batchIds.includes(id);
     const batchArchived = isBatch && files.length > 0 && files.every((f) => f.archived);
+    const batchLocked = isBatch && files.length > 0 && files.every((f) => f.locked);
     const idBadge = '<span class="entry-id">ID: ' + escapeHtml(id) + '</span>' +
       '<button type="button" class="secondary small copy-id" data-id="' + escapeHtml(id) + '">Copy ID</button>';
     const head = isBatch
@@ -1698,6 +1757,7 @@ function render() {
         '<button class="secondary small copy-batch" data-url="' + location.origin + '/b/' + id + '">Copy batch link</button>' +
         '<button class="secondary small copy-batch-all" data-id="' + id + '">Copy all links</button>' +
         '<button class="secondary small email-batch" data-id="' + id + '">Email batch</button>' +
+        '<button class="secondary small lock-batch' + (batchLocked ? ' active' : '') + '" data-id="' + id + '" data-locked="' + (batchLocked ? '1' : '') + '">' + (batchLocked ? 'Unlock batch' : 'Lock batch') + '</button>' +
         '<button class="secondary small archive-batch' + (batchArchived ? ' active' : '') + '" data-id="' + id + '" data-archived="' + (batchArchived ? '1' : '') + '">' + (batchArchived ? 'Unarchive batch' : 'Archive batch') + '</button>' +
         '<button class="secondary small delete-batch" data-id="' + id + '">Delete batch</button></div>'
       : '<div class="group-head"><span>single file</span>' + idBadge + '</div>';
@@ -1753,6 +1813,7 @@ function render() {
         '<button class="secondary small copy-file" data-url="' + escapeHtml(f.linkTarget || full) + '">Copy links</button>' +
         '<button class="secondary small regen" data-key="' + key + '">Regenerate links</button>' +
         (isBatch ? '' : '<button class="secondary small email-file" data-id="' + escapeHtml(f.id) + '">Email</button>') +
+        '<button type="button" class="secondary small lock-toggle' + (f.locked ? ' active' : '') + '" data-id="' + escapeHtml(f.id) + '" data-locked="' + (f.locked ? '1' : '') + '" title="' + (f.locked ? 'Remove from locked folder' : 'Move to locked folder') + '">' + (f.locked ? 'Unlock' : 'Lock') + '</button>' +
         '<button type="button" class="secondary small archive-toggle' + (f.archived ? ' active' : '') + '" data-id="' + escapeHtml(f.id) + '" data-archived="' + (f.archived ? '1' : '') + '" title="' + (f.archived ? 'Unarchive this entry' : 'Archive this entry') + '">' + (f.archived ? 'Unarchive' : 'Archive') + '</button>' +
         '<button class="secondary small del" data-key="' + key + '">Delete</button>' +
         '</div>' +
@@ -1775,6 +1836,9 @@ function render() {
   });
   groupsEl.querySelectorAll('.archive-toggle, .archive-batch').forEach((btn) => {
     btn.onclick = () => toggleArchived(btn.dataset.id, !btn.dataset.archived);
+  });
+  groupsEl.querySelectorAll('.lock-toggle, .lock-batch').forEach((btn) => {
+    btn.onclick = () => toggleLocked(btn.dataset.id, !btn.dataset.locked);
   });
   groupsEl.querySelectorAll('.email-batch').forEach((btn) => {
     btn.onclick = () => emailEntry(btn.dataset.id, 'batch');
@@ -1866,6 +1930,13 @@ function updateBulkButton(visibleFiles) {
     archiveBtn.style.display = 'none';
   }
 
+  if (touchedIds.size >= 1) {
+    lockBtn.style.display = 'inline-block';
+    lockBtn.textContent = (activeLockedOnly ? 'Unlock selected (' : 'Lock selected (') + touchedIds.size + ' entries)';
+  } else {
+    lockBtn.style.display = 'none';
+  }
+
   if (touchedIds.size >= 2) {
     combineBtn.style.display = 'inline-block';
     combineBtn.textContent = 'Combine selected (' + touchedIds.size + ' entries)';
@@ -1910,6 +1981,28 @@ archiveBtn.onclick = async () => {
     method: 'POST',
     headers: Object.assign({ 'content-type': 'application/json' }, authHeaders()),
     body: JSON.stringify({ ids: touchedIds, archived: nextArchived }),
+  })
+    .then((r) => { if (!r.ok) throw new Error(verb + ' failed'); })
+    .then(() => { selected.clear(); load(); })
+    .catch((err) => showBanner(err.message, true));
+};
+
+lockBtn.onclick = async () => {
+  const touchedIds = [...new Set([...selected].map((k) => k.slice(0, k.indexOf('/'))))];
+  if (!touchedIds.length) return;
+  const nextLocked = !activeLockedOnly;
+  const verb = nextLocked ? 'Lock' : 'Unlock';
+
+  const ok = await confirmDialog(
+    verb + ' ' + touchedIds.length + ' entries (' + selected.size + ' file(s) total)?',
+    verb
+  );
+  if (!ok) return;
+
+  fetch('/admin/set-locked', {
+    method: 'POST',
+    headers: Object.assign({ 'content-type': 'application/json' }, adminAuthHeaders()),
+    body: JSON.stringify({ ids: touchedIds, locked: nextLocked }),
   })
     .then((r) => { if (!r.ok) throw new Error(verb + ' failed'); })
     .then(() => { selected.clear(); load(); })
@@ -2065,6 +2158,17 @@ function toggleArchived(id, archived) {
       allFiles.filter((f) => f.id === id).forEach((f) => { f.archived = newArchived; });
       render();
     })
+    .catch((err) => showBanner(err.message, true));
+}
+
+function toggleLocked(id, locked) {
+  fetch('/admin/set-locked', {
+    method: 'POST',
+    headers: Object.assign({ 'content-type': 'application/json' }, adminAuthHeaders()),
+    body: JSON.stringify({ ids: [id], locked }),
+  })
+    .then((r) => { if (!r.ok) throw new Error('Failed to update lock state'); return r.json(); })
+    .then(() => { load(); })
     .catch((err) => showBanner(err.message, true));
 }
 
@@ -2572,6 +2676,11 @@ function checkToken(request, env) {
   return !!env.UPLOAD_TOKEN && token === env.UPLOAD_TOKEN;
 }
 
+function checkLockToken(request, env) {
+  const token = request.headers.get('x-lock-token') || '';
+  return !!env.LOCK_TOKEN && token === env.LOCK_TOKEN;
+}
+
 async function listAllObjects(bucket) {
   let cursor;
   const objects = [];
@@ -2853,6 +2962,7 @@ export default {
         return Response.json({ error: 'unauthorized' }, { status: 401, headers: { 'cache-control': 'private, no-store' } });
       }
       ctx.waitUntil(runCleanup(env));
+      const canSeeLocked = checkLockToken(request, env);
       const objects = await listAllObjects(env.SHARE_R2);
       const files = objects
         .filter((o) => !o.key.endsWith('/_manifest.json') && !o.key.startsWith('_system/') && !o.key.includes('/_thumb/'))
@@ -2878,8 +2988,10 @@ export default {
             linkTarget: cm.linkTarget || null,
             highlighted: cm.highlighted === '1',
             archived: cm.archived === '1',
+            locked: cm.locked === '1',
           };
-        });
+        })
+        .filter((f) => canSeeLocked || !f.locked);
       const batchIds = objects
         .filter((o) => o.key.endsWith('/_manifest.json'))
         .map((o) => o.key.slice(0, o.key.indexOf('/')));
@@ -3134,6 +3246,47 @@ export default {
         }
       }
       return Response.json({ ok: true, archived: !!archived, count });
+    }
+
+    if (request.method === 'POST' && pathname === '/admin/set-locked') {
+      if (!checkToken(request, env)) {
+        return Response.json({ error: 'unauthorized' }, { status: 401 });
+      }
+      const { ids, locked } = await request.json();
+      if (!Array.isArray(ids) || !ids.length) {
+        return Response.json({ error: 'no ids' }, { status: 400 });
+      }
+      if (!locked && !checkLockToken(request, env)) {
+        return Response.json({ error: 'unauthorized' }, { status: 401 });
+      }
+      let count = 0;
+      for (const id of ids) {
+        const files = await listEntryFiles(env.SHARE_R2, id);
+        for (const o of files) {
+          const object = await env.SHARE_R2.get(o.key);
+          if (!object) continue;
+          const cm = Object.assign({}, object.customMetadata);
+          if (!cm.createdAt) cm.createdAt = object.uploaded.toISOString();
+          if (locked) cm.locked = '1';
+          else delete cm.locked;
+          await env.SHARE_R2.put(o.key, object.body, {
+            httpMetadata: object.httpMetadata,
+            customMetadata: cm,
+          });
+          count++;
+        }
+      }
+      return Response.json({ ok: true, locked: !!locked, count });
+    }
+
+    if (request.method === 'POST' && pathname === '/admin/verify-lock') {
+      if (!checkToken(request, env)) {
+        return Response.json({ error: 'unauthorized' }, { status: 401 });
+      }
+      if (!checkLockToken(request, env)) {
+        return Response.json({ error: 'wrong password' }, { status: 401 });
+      }
+      return Response.json({ ok: true });
     }
 
     if (request.method === 'POST' && pathname === '/admin/add-tag') {
