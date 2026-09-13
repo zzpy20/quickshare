@@ -1635,8 +1635,10 @@ function renderArchivedFilter() {
 }
 
 function renderLockedFilter() {
+  const sessionUnlocked = !!sessionStorage.getItem('quickshare_lock_token');
   lockedFilterEl.innerHTML =
-    '<button type="button" class="tag-chip locked-filter-chip' + (activeLockedOnly ? ' active' : '') + '">🔒 Locked</button>';
+    '<button type="button" class="tag-chip locked-filter-chip' + (activeLockedOnly ? ' active' : '') + '">🔒 Locked</button>' +
+    (sessionUnlocked ? '<button type="button" class="secondary small lock-now-btn">Lock now</button>' : '');
   lockedFilterEl.querySelector('.locked-filter-chip').onclick = () => {
     if (!activeLockedOnly && !sessionStorage.getItem('quickshare_lock_token')) {
       lockAuthBox.classList.add('show');
@@ -1647,6 +1649,15 @@ function renderLockedFilter() {
     currentPage = 1;
     render();
   };
+  const lockNowBtn = lockedFilterEl.querySelector('.lock-now-btn');
+  if (lockNowBtn) {
+    lockNowBtn.onclick = () => {
+      sessionStorage.removeItem('quickshare_lock_token');
+      activeLockedOnly = false;
+      currentPage = 1;
+      load();
+    };
+  }
 }
 
 unlockSubmitBtn.onclick = () => {
