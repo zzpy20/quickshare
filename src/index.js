@@ -1781,12 +1781,14 @@ function render() {
         : '';
       const thumbSrc = f.thumbUrl ? location.origin + f.thumbUrl : full;
       const previewKind = classifyPreviewKind(f.contentType);
+      const isLink = f.contentType === 'text/x-quickshare-link';
       const thumb = f.contentType && f.contentType.startsWith('image/')
         ? '<img class="thumb" loading="lazy" src="' + escapeHtml(thumbSrc) + '" data-key="' + key + '">'
-        : previewKind
-          ? '<div class="thumb type-tile-thumb" data-key="' + key + '">' + (TYPE_TILE[classifyType(f.contentType)] || '📁') + '</div>'
-          : '';
-      const isLink = f.contentType === 'text/x-quickshare-link';
+        : isLink && f.thumbUrl
+          ? '<img class="thumb link-thumb" loading="lazy" src="' + escapeHtml(thumbSrc) + '" data-key="' + key + '" data-fallback="🔗">'
+          : previewKind
+            ? '<div class="thumb type-tile-thumb" data-key="' + key + '">' + (TYPE_TILE[classifyType(f.contentType)] || '📁') + '</div>'
+            : '';
       const nameDisplay = (isLink ? '🔗 ' : '') + escapeHtml(f.name);
       const linkMeta = isLink && f.linkTarget
         ? '<div class="meta link-target"><a href="' + escapeHtml(f.linkTarget) + '" target="_blank" rel="noopener">' + escapeHtml(f.linkTarget) + '</a></div>'
@@ -1895,6 +1897,21 @@ function render() {
       const previewable = allFilteredFiles.filter((f) => classifyPreviewKind(f.contentType));
       const idx = previewable.findIndex((f) => f.key === e.target.dataset.key);
       openLightbox(previewable, idx);
+    };
+  });
+  groupsEl.querySelectorAll('.link-thumb').forEach((img) => {
+    img.onerror = () => {
+      const div = document.createElement('div');
+      div.className = 'thumb type-tile-thumb';
+      div.dataset.key = img.dataset.key;
+      div.textContent = img.dataset.fallback;
+      div.onclick = () => {
+        const { allFilteredFiles } = computeView();
+        const previewable = allFilteredFiles.filter((f) => classifyPreviewKind(f.contentType));
+        const idx = previewable.findIndex((f) => f.key === div.dataset.key);
+        openLightbox(previewable, idx);
+      };
+      img.replaceWith(div);
     };
   });
   groupsEl.querySelectorAll('.tag-remove').forEach((btn) => {
@@ -2365,6 +2382,17 @@ function renderSizeToggle() {
 renderSizeToggle();
 applyGridSize();
 
+galleryMain.addEventListener('error', (e) => {
+  if (!e.target.classList || !e.target.classList.contains('link-thumb')) return;
+  const img = e.target;
+  const cell = img.closest('.gallery-cell');
+  if (!cell) return;
+  const tile = document.createElement('div');
+  tile.className = 'type-tile';
+  tile.innerHTML = '<span class="emoji">' + img.dataset.emoji + '</span><span class="ext">' + img.dataset.ext + '</span>';
+  img.replaceWith(tile);
+}, true);
+
 function renderTypeFilters() {
   renderTypeChips(typeFiltersEl, activeType, (type) => { activeType = type; render(); });
 }
@@ -2413,6 +2441,12 @@ function cellHtml(f) {
   }
   const emoji = TYPE_TILE[f.type] || '📁';
   const ext = f.type === 'link' ? '' : escapeHtml((f.name.split('.').pop() || '').slice(0, 4));
+  if (f.type === 'link' && f.thumbUrl) {
+    const thumbSrc = escapeHtml(location.origin + f.thumbUrl);
+    return '<a class="gallery-cell" href="' + safeUrl + '" target="_blank" title="' + title + '">' +
+      '<img class="link-thumb" loading="lazy" src="' + thumbSrc + '" data-emoji="' + emoji + '" data-ext="' + ext + '">' +
+      '<div class="cell-name">' + title + '</div></a>';
+  }
   return '<a class="gallery-cell" href="' + safeUrl + '" target="_blank" title="' + title + '">' +
     '<div class="type-tile"><span class="emoji">' + emoji + '</span><span class="ext">' + ext + '</span></div>' +
     '<div class="cell-name">' + title + '</div></a>';
@@ -2668,6 +2702,40 @@ function wrapCaptionHtml(text) {
 }
 
 const LINK_CONTENT_TYPE = 'text/x-quickshare-link';
+
+async function discoverOgImage(url) {
+  if (!url) return null;
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { 'user-agent': 'Mozilla/5.0 (compatible; quickshare-preview)' },
+    });
+    clearTimeout(timeout);
+    if (!res.ok) return null;
+
+    let found = null;
+    const rewriter = new HTMLRewriter().on('meta', {
+      element(el) {
+        if (found) return;
+        const prop = (el.getAttribute('property') || el.getAttribute('name') || '').toLowerCase();
+        if (prop === 'og:image' || prop === 'twitter:image') {
+          const content = el.getAttribute('content');
+          if (content) found = content;
+        }
+      },
+    });
+    await rewriter.transform(res).arrayBuffer();
+
+    if (found && !/^https?:\/\//i.test(found)) {
+      try { found = new URL(found, url).toString(); } catch (e) { found = null; }
+    }
+    return found;
+  } catch (e) {
+    return null;
+  }
+}
 
 function normalizeLinkUrl(raw) {
   let str = (raw || '').trim();
@@ -2991,7 +3059,9 @@ export default {
             uploaded: cm.createdAt || o.uploaded,
             contentType,
             url: '/f/' + id + '/' + encodeURIComponent(name),
-            thumbUrl: contentType && contentType.startsWith('image/') ? '/f/' + id + '/_thumb/' + encodeURIComponent(name) : null,
+            thumbUrl: (contentType && contentType.startsWith('image/')) || contentType === LINK_CONTENT_TYPE
+              ? '/f/' + id + '/_thumb/' + encodeURIComponent(name)
+              : null,
             tags: cm.tags ? cm.tags.split(',').filter(Boolean) : [],
             caption: cm.caption || '',
             captionFull: cm.captionFull === '1',
@@ -3348,7 +3418,40 @@ export default {
         const originalKey = keyParts[0] + '/' + keyParts[2];
         const original = await env.SHARE_R2.get(originalKey);
         const ct = original && original.httpMetadata && original.httpMetadata.contentType;
-        if (!original || !ct || !ct.startsWith('image/')) {
+        if (!original) {
+          return new Response('Not found', { status: 404 });
+        }
+
+        if (ct === LINK_CONTENT_TYPE) {
+          const cm = original.customMetadata || {};
+          let ogImage = cm.ogImage;
+          if (ogImage === undefined) {
+            ogImage = (await discoverOgImage(cm.linkTarget)) || '';
+            await env.SHARE_R2.put(originalKey, original.body, {
+              httpMetadata: original.httpMetadata,
+              customMetadata: Object.assign({}, cm, { ogImage }),
+            });
+          }
+          if (!ogImage) {
+            return new Response('Not found', { status: 404 });
+          }
+          try {
+            const imgRes = await fetch(ogImage, {
+              headers: { 'user-agent': 'Mozilla/5.0 (compatible; quickshare-preview)' },
+            });
+            if (!imgRes.ok || !imgRes.body) return new Response('Not found', { status: 404 });
+            return new Response(imgRes.body, {
+              headers: {
+                'content-type': imgRes.headers.get('content-type') || 'image/jpeg',
+                'cache-control': 'public, max-age=86400',
+              },
+            });
+          } catch (e) {
+            return new Response('Not found', { status: 404 });
+          }
+        }
+
+        if (!ct || !ct.startsWith('image/')) {
           return new Response('Not found', { status: 404 });
         }
         try {
