@@ -26,6 +26,17 @@ const STYLE = `
   }
   h1 { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
   p.sub { color: #86868b; margin-top: 0; font-size: 14px; }
+  .site-nav { display: flex; gap: 24px; margin: 14px 0 0; }
+  .nav-tab {
+    color: #86868b; text-decoration: none; font-size: 15px; font-weight: 500;
+    padding-bottom: 6px; border-bottom: 2px solid transparent;
+  }
+  .nav-tab:hover { color: #1d1d1f; }
+  .nav-tab.active { color: #1d1d1f; font-weight: 700; border-bottom-color: #0071e3; }
+  @media (prefers-color-scheme: dark) {
+    .nav-tab:hover { color: #f5f5f7; }
+    .nav-tab.active { color: #f5f5f7; }
+  }
   #auth { display: flex; gap: 8px; margin: 20px 0; }
   #lockAuth { display: none; gap: 8px; margin: 10px 0; }
   #lockAuth.show { display: flex; }
@@ -634,16 +645,15 @@ function attachTagAutocomplete(input, getTags, opts) {
 }
 `;
 
-function navPill(href, label) {
-  const style = 'display:inline-flex;align-items:center;gap:4px;padding:8px 16px;margin:4px 8px 4px 0;' +
-    'background:#0071e3;color:#fff;border-radius:20px;font-size:13px;font-weight:600;text-decoration:none;' +
-    'box-shadow:0 2px 8px rgba(0,113,227,0.28);transition:background .15s ease,transform .15s ease;';
-  return '<a href="' + href + '" style="' + style + '" ' +
-    'onmouseover="this.style.background=\'#0077ed\';this.style.transform=\'translateY(-1px)\'" ' +
-    'onmouseout="this.style.background=\'#0071e3\';this.style.transform=\'none\'">' + label + '</a>';
-}
-function navBar(style, ...pills) {
-  return '<div style="' + style + '">' + pills.join('') + '</div>';
+function navTabs(current) {
+  const tabs = [
+    ['upload', '/', 'Upload'],
+    ['admin', '/admin', 'Admin'],
+    ['gallery', '/gallery', 'Gallery'],
+  ];
+  return '<nav class="site-nav">' + tabs.map(([key, href, label]) =>
+    '<a href="' + href + '" class="nav-tab' + (key === current ? ' active' : '') + '">' + label + '</a>'
+  ).join('') + '</nav>';
 }
 
 const PAGE = `<!doctype html>
@@ -657,7 +667,7 @@ const PAGE = `<!doctype html>
 <body>
   <h1>quickshare</h1>
   <p class="sub">Drop files, get a link.</p>
-  ${navBar('margin-top:12px;', navPill('/admin', 'Admin →'), navPill('/gallery', 'Gallery →'))}
+  ${navTabs('upload')}
 
   <div id="banner"></div>
   <div id="toast"></div>
@@ -1401,7 +1411,7 @@ const ADMIN_PAGE = `<!doctype html>
 <body>
   <h1>quickshare admin</h1>
   <p class="sub">All uploaded files.</p>
-  ${navBar('margin-top:12px;', navPill('/', 'Upload →'), navPill('/gallery', 'Gallery →'))}
+  ${navTabs('admin')}
 
   <div id="banner"></div>
 
@@ -2279,7 +2289,7 @@ const GALLERY_PAGE = `<!doctype html>
 </head>
 <body class="gallery-page">
   <h1>Gallery</h1>
-  ${navBar('margin-top:8px;', navPill('/', 'Upload →'), navPill('/admin', 'Manage →'))}
+  ${navTabs('gallery')}
 
   <div id="banner"></div>
 
