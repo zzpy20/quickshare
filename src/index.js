@@ -237,6 +237,25 @@ const STYLE = `
   @media (prefers-color-scheme: dark) { #confirmBox { background: #2c2c2e; color: #f5f5f7; } }
   #confirmMessage { font-size: 14px; line-height: 1.5; margin: 0 0 18px; }
   #confirmActions { display: flex; justify-content: flex-end; gap: 8px; }
+  #tagMgrOverlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+    align-items: center; justify-content: center; z-index: 3000; padding: 20px;
+  }
+  #tagMgrOverlay.open { display: flex; }
+  #tagMgrBox {
+    background: #fff; color: #1d1d1f; border-radius: 14px; padding: 18px 20px;
+    max-width: 420px; width: 100%; max-height: 70vh; display: flex; flex-direction: column;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.28);
+  }
+  @media (prefers-color-scheme: dark) { #tagMgrBox { background: #2c2c2e; color: #f5f5f7; } }
+  #tagMgrHead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  #tagMgrList { overflow-y: auto; }
+  .tag-mgr-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
+  .tag-mgr-name { flex: 1; font-size: 14px; }
+  .tag-mgr-input {
+    flex: 1; padding: 5px 8px; border-radius: 8px; border: 1px solid #d1d1d6; font-size: 14px;
+  }
+  @media (prefers-color-scheme: dark) { .tag-mgr-input { background: #1c1c1e; color: #f5f5f7; border-color: #48484a; } }
   #confirmOk { background: #ff3b30; }
   #confirmOk:hover { background: #ff2d1f; }
   #previewOverlay {
@@ -1560,6 +1579,16 @@ const ADMIN_PAGE = `<!doctype html>
     </div>
   </div>
 
+  <div id="tagMgrOverlay">
+    <div id="tagMgrBox">
+      <div id="tagMgrHead">
+        <strong>Manage tags</strong>
+        <button type="button" id="tagMgrClose" class="secondary small">Close</button>
+      </div>
+      <div id="tagMgrList"></div>
+    </div>
+  </div>
+
   ${SITE_FOOTER_HTML}
 
 <script>
@@ -1581,6 +1610,7 @@ const editOverlay = $('editOverlay'), editArea = $('editArea');
 const editSaveBtn = $('editSave'), editCancelBtn = $('editCancel');
 const editLinkBtn = $('editLinkBtn'), editLinkRow = $('editLinkRow'), editLinkInput = $('editLinkInput');
 const editLinkApplyBtn = $('editLinkApply'), editLinkCancelBtn = $('editLinkCancel');
+const tagMgrOverlay = $('tagMgrOverlay'), tagMgrList = $('tagMgrList'), tagMgrCloseBtn = $('tagMgrClose');
 const toTopFab = $('toTopFab');
 
 window.addEventListener('scroll', () => {
@@ -1767,6 +1797,7 @@ editSaveBtn.onclick = () => {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && editOverlay.classList.contains('open') && !confirmOverlay.classList.contains('open')) requestCloseEdit();
   if (e.key === 'Escape' && previewOverlay.classList.contains('open')) closePreview();
+  if (e.key === 'Escape' && tagMgrOverlay.classList.contains('open')) closeTagManager();
 });
 window.addEventListener('beforeunload', (e) => {
   if (editOverlay.classList.contains('open') && editDirty) {
@@ -1808,7 +1839,8 @@ function renderTagFilters() {
   if (!tags.length) { tagFiltersEl.innerHTML = ''; return; }
   tagFiltersEl.innerHTML = tags.map((t) =>
     '<button type="button" class="tag-chip' + (activeTag === t ? ' active' : '') + '" data-tag="' + escapeHtml(t) + '">' + escapeHtml(t) + '</button>'
-  ).join('') + (activeTag ? '<button type="button" class="tag-chip" id="clearTag">✕ clear</button>' : '');
+  ).join('') + (activeTag ? '<button type="button" class="tag-chip" id="clearTag">✕ clear</button>' : '') +
+    '<button type="button" class="tag-chip" id="manageTagsBtn">⚙️ Manage tags</button>';
   tagFiltersEl.querySelectorAll('.tag-chip[data-tag]').forEach((btn) => {
     btn.onclick = () => {
       activeTag = activeTag === btn.dataset.tag ? null : btn.dataset.tag;
@@ -1818,6 +1850,71 @@ function renderTagFilters() {
   });
   const clearBtn = $('clearTag');
   if (clearBtn) clearBtn.onclick = () => { activeTag = null; currentPage = 1; render(); };
+  $('manageTagsBtn').onclick = openTagManager;
+}
+
+function openTagManager() {
+  renderTagMgrList();
+  tagMgrOverlay.classList.add('open');
+}
+function closeTagManager() {
+  tagMgrOverlay.classList.remove('open');
+}
+tagMgrCloseBtn.onclick = closeTagManager;
+tagMgrOverlay.onclick = (e) => { if (e.target === tagMgrOverlay) closeTagManager(); };
+
+function renderTagMgrList() {
+  const tags = allKnownTags();
+  tagMgrList.innerHTML = tags.length
+    ? tags.map((t) =>
+        '<div class="tag-mgr-row" data-tag="' + escapeHtml(t) + '">' +
+        '<span class="tag-mgr-name">' + escapeHtml(t) + '</span>' +
+        '<button type="button" class="secondary small tag-mgr-rename">Rename</button>' +
+        '</div>'
+      ).join('')
+    : '<p class="sub">No tags yet.</p>';
+  tagMgrList.querySelectorAll('.tag-mgr-rename').forEach((btn) => {
+    btn.onclick = () => startTagRename(btn.closest('.tag-mgr-row'));
+  });
+}
+
+function startTagRename(row) {
+  const oldTag = row.dataset.tag;
+  row.innerHTML =
+    '<input type="text" class="tag-mgr-input" value="' + escapeHtml(oldTag) + '">' +
+    '<button type="button" class="secondary small tag-mgr-save">Save</button>' +
+    '<button type="button" class="secondary small tag-mgr-cancel">Cancel</button>';
+  const input = row.querySelector('.tag-mgr-input');
+  input.focus();
+  input.select();
+  row.querySelector('.tag-mgr-save').onclick = () => saveTagRename(oldTag, input.value);
+  row.querySelector('.tag-mgr-cancel').onclick = () => renderTagMgrList();
+  input.onkeydown = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); saveTagRename(oldTag, input.value); }
+    if (e.key === 'Escape') renderTagMgrList();
+  };
+}
+
+function saveTagRename(oldTag, newTagRaw) {
+  const newTag = newTagRaw.trim().toLowerCase();
+  if (!newTag || newTag === oldTag) { renderTagMgrList(); return; }
+  fetch('/admin/rename-tag', {
+    method: 'POST',
+    headers: Object.assign({ 'content-type': 'application/json' }, authHeaders()),
+    body: JSON.stringify({ oldTag, newTag }),
+  })
+    .then((r) => { if (!r.ok) throw new Error('Failed to rename tag'); return r.json(); })
+    .then(({ count }) => {
+      allFiles.forEach((f) => {
+        if (!f.tags || !f.tags.includes(oldTag)) return;
+        f.tags = [...new Set(f.tags.map((t) => (t === oldTag ? newTag : t)))];
+      });
+      if (activeTag === oldTag) activeTag = newTag;
+      showBanner('Renamed "' + oldTag + '" to "' + newTag + '" on ' + count + ' file(s).', false);
+      render();
+      renderTagMgrList();
+    })
+    .catch((err) => showBanner(err.message, true));
 }
 
 function renderHighlightFilter() {
@@ -3513,6 +3610,38 @@ export default {
       });
 
       return Response.json({ ok: true, tags });
+    }
+
+    if (request.method === 'POST' && pathname === '/admin/rename-tag') {
+      if (!checkToken(request, env)) {
+        return Response.json({ error: 'unauthorized' }, { status: 401 });
+      }
+      const { oldTag, newTag } = await request.json();
+      const from = String(oldTag || '').trim().toLowerCase();
+      const to = String(newTag || '').trim().toLowerCase();
+      if (!from || !to) return Response.json({ error: 'missing oldTag or newTag' }, { status: 400 });
+      if (from === to) return Response.json({ ok: true, count: 0 });
+
+      const objects = await listAllObjects(env.SHARE_R2);
+      let count = 0;
+      for (const o of objects) {
+        const existing = o.customMetadata || {};
+        if (!existing.tags) continue;
+        const tags = existing.tags.split(',').filter(Boolean);
+        if (!tags.includes(from)) continue;
+
+        const object = await env.SHARE_R2.get(o.key);
+        if (!object) continue;
+        const cm = Object.assign({}, object.customMetadata);
+        const renamed = [...new Set(tags.map((t) => (t === from ? to : t)))];
+        cm.tags = renamed.join(',');
+        await env.SHARE_R2.put(o.key, object.body, {
+          httpMetadata: object.httpMetadata,
+          customMetadata: cm,
+        });
+        count++;
+      }
+      return Response.json({ ok: true, count });
     }
 
     if (request.method === 'POST' && pathname === '/admin/set-caption') {
