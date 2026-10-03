@@ -1627,17 +1627,19 @@ function closePreview() {
 previewCloseBtn.onclick = closePreview;
 previewOverlay.onclick = (e) => { if (e.target === previewOverlay) closePreview(); };
 
-let editDoc = null, editKey = null, editSavedRange = null;
+let editDoc = null, editKey = null, editSavedRange = null, editDirty = false;
 
 function openEditPage(key, url) {
   editKey = key;
   editArea.innerHTML = '';
+  editDirty = false;
   showBanner('', false);
   fetch(url, { cache: 'no-store' })
     .then((r) => { if (!r.ok) throw new Error('Failed to load page'); return r.text(); })
     .then((html) => {
       editDoc = new DOMParser().parseFromString(html, 'text/html');
       editArea.innerHTML = editDoc.body ? editDoc.body.innerHTML : html;
+      editDirty = false;
       editOverlay.classList.add('open');
     })
     .catch((err) => showBanner(err.message, true));
@@ -1649,12 +1651,20 @@ function closeEditPage() {
   editDoc = null;
   editKey = null;
   editSavedRange = null;
+  editDirty = false;
 }
-editCancelBtn.onclick = closeEditPage;
-editOverlay.onclick = (e) => { if (e.target === editOverlay) closeEditPage(); };
+function requestCloseEdit() {
+  if (!editDirty) { closeEditPage(); return; }
+  confirmDialog('Discard unsaved changes to this page?', 'Discard').then((ok) => {
+    if (ok) closeEditPage();
+  });
+}
+editArea.addEventListener('input', () => { editDirty = true; });
+editCancelBtn.onclick = requestCloseEdit;
+editOverlay.onclick = (e) => { if (e.target === editOverlay) requestCloseEdit(); };
 
 editOverlay.querySelectorAll('#editToolbar button[data-cmd]').forEach((btn) => {
-  btn.onclick = () => { editArea.focus(); document.execCommand(btn.dataset.cmd); };
+  btn.onclick = () => { editArea.focus(); document.execCommand(btn.dataset.cmd); editDirty = true; };
 });
 editLinkBtn.onclick = () => {
   const sel = window.getSelection();
@@ -1671,7 +1681,7 @@ editLinkApplyBtn.onclick = () => {
     sel.removeAllRanges();
     sel.addRange(editSavedRange);
   }
-  if (url) document.execCommand('createLink', false, url);
+  if (url) { document.execCommand('createLink', false, url); editDirty = true; }
   editLinkRow.classList.remove('open');
 };
 editLinkCancelBtn.onclick = () => { editLinkRow.classList.remove('open'); };
@@ -1697,8 +1707,14 @@ editSaveBtn.onclick = () => {
 };
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && editOverlay.classList.contains('open')) closeEditPage();
+  if (e.key === 'Escape' && editOverlay.classList.contains('open') && !confirmOverlay.classList.contains('open')) requestCloseEdit();
   if (e.key === 'Escape' && previewOverlay.classList.contains('open')) closePreview();
+});
+window.addEventListener('beforeunload', (e) => {
+  if (editOverlay.classList.contains('open') && editDirty) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
 });
 
 ${AUTH_JS}
