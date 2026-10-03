@@ -255,6 +255,40 @@ const STYLE = `
   }
   @media (prefers-color-scheme: dark) { #previewHead { border-bottom-color: #38383a; } }
   #previewFrame { flex: 1; width: 100%; border: none; background: #fff; }
+  #editOverlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+    align-items: center; justify-content: center; z-index: 3000; padding: 20px;
+  }
+  #editOverlay.open { display: flex; }
+  #editBox {
+    background: #fff; color: #1d1d1f; border-radius: 14px; box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+    width: 100%; max-width: 800px; height: 85vh; display: flex; flex-direction: column; overflow: hidden;
+  }
+  @media (prefers-color-scheme: dark) { #editBox { background: #2c2c2e; color: #f5f5f7; } }
+  #editHead {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+    padding: 10px 12px; border-bottom: 1px solid #e5e5ea;
+  }
+  @media (prefers-color-scheme: dark) { #editHead { border-bottom-color: #38383a; } }
+  #editToolbar { display: flex; gap: 6px; }
+  #editToolbar button { min-width: 32px; }
+  #editHeadActions { display: flex; gap: 8px; }
+  #editLinkRow {
+    display: none; align-items: center; gap: 8px; padding: 8px 12px;
+    border-bottom: 1px solid #e5e5ea;
+  }
+  @media (prefers-color-scheme: dark) { #editLinkRow { border-bottom-color: #38383a; } }
+  #editLinkRow.open { display: flex; }
+  #editLinkInput {
+    flex: 1; padding: 6px 10px; border-radius: 8px; border: 1px solid #d1d1d6; font-size: 13px;
+  }
+  @media (prefers-color-scheme: dark) { #editLinkInput { background: #1c1c1e; color: #f5f5f7; border-color: #48484a; } }
+  #editArea {
+    flex: 1; width: 100%; overflow: auto; padding: 16px 20px; background: #fff; color: #1d1d1f;
+    outline: none; font-family: -apple-system, BlinkMacSystemFont, sans-serif; line-height: 1.5;
+  }
+  @media (prefers-color-scheme: dark) { #editArea { background: #1c1c1e; color: #f5f5f7; } }
+  #editArea img { max-width: 100%; height: auto; }
   .lightbox-nav {
     position: fixed; top: 50%; transform: translateY(-50%);
     width: 44px; height: 44px; border-radius: 50%; background: rgba(255,255,255,0.15);
@@ -1493,6 +1527,29 @@ const ADMIN_PAGE = `<!doctype html>
     </div>
   </div>
 
+  <div id="editOverlay">
+    <div id="editBox">
+      <div id="editHead">
+        <div id="editToolbar">
+          <button type="button" class="secondary small" data-cmd="bold" title="Bold"><b>B</b></button>
+          <button type="button" class="secondary small" data-cmd="italic" title="Italic"><i>I</i></button>
+          <button type="button" class="secondary small" data-cmd="underline" title="Underline"><u>U</u></button>
+          <button type="button" class="secondary small" id="editLinkBtn" title="Insert link">Link</button>
+        </div>
+        <div id="editHeadActions">
+          <button type="button" id="editCancel" class="secondary small">Cancel</button>
+          <button type="button" id="editSave" class="small">Save</button>
+        </div>
+      </div>
+      <div id="editLinkRow">
+        <input type="text" id="editLinkInput" placeholder="https://…">
+        <button type="button" id="editLinkApply" class="secondary small">Add link</button>
+        <button type="button" id="editLinkCancel" class="secondary small">Cancel</button>
+      </div>
+      <div id="editArea" contenteditable="true"></div>
+    </div>
+  </div>
+
   <div id="confirmOverlay">
     <div id="confirmBox">
       <p id="confirmMessage"></p>
@@ -1520,6 +1577,10 @@ const confirmOverlay = $('confirmOverlay'), confirmMessageEl = $('confirmMessage
 const confirmCancelBtn = $('confirmCancel'), confirmOkBtn = $('confirmOk');
 const previewOverlay = $('previewOverlay'), previewFrame = $('previewFrame');
 const previewOpenNew = $('previewOpenNew'), previewCloseBtn = $('previewClose');
+const editOverlay = $('editOverlay'), editArea = $('editArea');
+const editSaveBtn = $('editSave'), editCancelBtn = $('editCancel');
+const editLinkBtn = $('editLinkBtn'), editLinkRow = $('editLinkRow'), editLinkInput = $('editLinkInput');
+const editLinkApplyBtn = $('editLinkApply'), editLinkCancelBtn = $('editLinkCancel');
 const toTopFab = $('toTopFab');
 
 window.addEventListener('scroll', () => {
@@ -1565,7 +1626,78 @@ function closePreview() {
 }
 previewCloseBtn.onclick = closePreview;
 previewOverlay.onclick = (e) => { if (e.target === previewOverlay) closePreview(); };
+
+let editDoc = null, editKey = null, editSavedRange = null;
+
+function openEditPage(key, url) {
+  editKey = key;
+  editArea.innerHTML = '';
+  showBanner('', false);
+  fetch(url)
+    .then((r) => { if (!r.ok) throw new Error('Failed to load page'); return r.text(); })
+    .then((html) => {
+      editDoc = new DOMParser().parseFromString(html, 'text/html');
+      editArea.innerHTML = editDoc.body ? editDoc.body.innerHTML : html;
+      editOverlay.classList.add('open');
+    })
+    .catch((err) => showBanner(err.message, true));
+}
+function closeEditPage() {
+  editOverlay.classList.remove('open');
+  editLinkRow.classList.remove('open');
+  editArea.innerHTML = '';
+  editDoc = null;
+  editKey = null;
+  editSavedRange = null;
+}
+editCancelBtn.onclick = closeEditPage;
+editOverlay.onclick = (e) => { if (e.target === editOverlay) closeEditPage(); };
+
+editOverlay.querySelectorAll('#editToolbar button[data-cmd]').forEach((btn) => {
+  btn.onclick = () => { editArea.focus(); document.execCommand(btn.dataset.cmd); };
+});
+editLinkBtn.onclick = () => {
+  const sel = window.getSelection();
+  editSavedRange = sel.rangeCount ? sel.getRangeAt(0) : null;
+  editLinkInput.value = '';
+  editLinkRow.classList.add('open');
+  editLinkInput.focus();
+};
+editLinkApplyBtn.onclick = () => {
+  const url = editLinkInput.value.trim();
+  editArea.focus();
+  if (editSavedRange) {
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(editSavedRange);
+  }
+  if (url) document.execCommand('createLink', false, url);
+  editLinkRow.classList.remove('open');
+};
+editLinkCancelBtn.onclick = () => { editLinkRow.classList.remove('open'); };
+
+editSaveBtn.onclick = () => {
+  if (!editDoc || !editKey) return;
+  editDoc.body.innerHTML = editArea.innerHTML;
+  const html = '<!DOCTYPE html>\\n' + editDoc.documentElement.outerHTML;
+  editSaveBtn.disabled = true;
+  fetch('/admin/update-page', {
+    method: 'POST',
+    headers: Object.assign({ 'content-type': 'application/json' }, authHeaders()),
+    body: JSON.stringify({ key: editKey, html }),
+  })
+    .then((r) => { if (!r.ok) throw new Error('Failed to save page'); return r.json(); })
+    .then(() => {
+      showBanner('Page updated.', false);
+      closeEditPage();
+      load();
+    })
+    .catch((err) => showBanner(err.message, true))
+    .finally(() => { editSaveBtn.disabled = false; });
+};
+
 document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && editOverlay.classList.contains('open')) closeEditPage();
   if (e.key === 'Escape' && previewOverlay.classList.contains('open')) closePreview();
 });
 
@@ -1836,6 +1968,7 @@ function render() {
       const thumbSrc = f.thumbUrl ? location.origin + f.thumbUrl : full;
       const previewKind = classifyPreviewKind(f.contentType);
       const isLink = f.contentType === 'text/x-quickshare-link';
+      const isHtmlPage = (f.contentType || '').startsWith('text/html');
       const thumb = f.contentType && f.contentType.startsWith('image/')
         ? '<img class="thumb" loading="lazy" src="' + escapeHtml(thumbSrc) + '" data-key="' + key + '">'
         : isLink && f.thumbUrl
@@ -1878,6 +2011,7 @@ function render() {
         '<div class="meta">' + fmtSize(f.size) + ' · ' + fmtDate(f.uploaded) + '</div>' +
         '<a href="' + escapeHtml(full) + '" target="_blank" class="action-btn small">open</a>' +
         (isLink && f.linkTarget ? '<button type="button" class="secondary small preview-link" data-url="' + escapeHtml(f.linkTarget) + '">Preview</button>' : '') +
+        (isHtmlPage ? '<button type="button" class="secondary small edit-page" data-key="' + key + '" data-url="' + escapeHtml(full) + '">Edit</button>' : '') +
         '<button class="secondary small copy-file" data-url="' + escapeHtml(f.linkTarget || full) + '">Copy links</button>' +
         '<button class="secondary small regen" data-key="' + key + '">Regenerate links</button>' +
         (isBatch ? '' : '<button class="secondary small email-file" data-id="' + escapeHtml(f.id) + '">Email</button>') +
@@ -1919,6 +2053,9 @@ function render() {
   });
   groupsEl.querySelectorAll('.preview-link').forEach((btn) => {
     btn.onclick = () => openPreview(btn.dataset.url);
+  });
+  groupsEl.querySelectorAll('.edit-page').forEach((btn) => {
+    btn.onclick = () => openEditPage(btn.dataset.key, btn.dataset.url);
   });
   groupsEl.querySelectorAll('.copy-id').forEach((btn) => {
     btn.onclick = (e) => copyToClipboard(e.target, e.target.dataset.id);
@@ -3339,6 +3476,34 @@ export default {
       });
 
       return Response.json({ ok: true, caption: trimmed, captionFull: !!overflow });
+    }
+
+    if (request.method === 'POST' && pathname === '/admin/update-page') {
+      if (!checkToken(request, env)) {
+        return Response.json({ error: 'unauthorized' }, { status: 401 });
+      }
+      const { key, html } = await request.json();
+      if (!key || typeof html !== 'string') return Response.json({ error: 'missing key or html' }, { status: 400 });
+
+      const object = await env.SHARE_R2.get(key);
+      if (!object) return Response.json({ error: 'not found' }, { status: 404 });
+
+      const contentType = (object.httpMetadata && object.httpMetadata.contentType) || '';
+      if (!contentType.startsWith('text/html')) {
+        return Response.json({ error: 'not an editable page' }, { status: 400 });
+      }
+
+      const cm = Object.assign({}, object.customMetadata);
+      if (!cm.createdAt) cm.createdAt = object.uploaded.toISOString();
+
+      const sanitized = await sanitizeHtml(new TextEncoder().encode(html));
+
+      await env.SHARE_R2.put(key, sanitized, {
+        httpMetadata: object.httpMetadata,
+        customMetadata: cm,
+      });
+
+      return Response.json({ ok: true });
     }
 
     if (request.method === 'POST' && pathname === '/admin/set-highlight') {
