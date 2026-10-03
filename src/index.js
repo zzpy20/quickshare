@@ -1660,6 +1660,64 @@ function requestCloseEdit() {
   });
 }
 editArea.addEventListener('input', () => { editDirty = true; });
+function cleanPastedHtml(html) {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const clean = (node) => {
+    [...node.children].forEach((el) => {
+      clean(el);
+      const tag = el.tagName.toLowerCase();
+      if (tag === 'meta' || tag === 'style' || tag === 'script' || tag === 'link') {
+        el.remove();
+        return;
+      }
+      // Allowlist: keep only href on links, strip every other attribute (style, class,
+      // id, and any site-specific cruft like Wikipedia's data-mw/about/typeof/rel).
+      const href = tag === 'a' ? el.getAttribute('href') : null;
+      [...el.attributes].forEach((a) => el.removeAttribute(a.name));
+      if (href) el.setAttribute('href', href);
+      if (tag === 'span' || tag === 'font' || tag === 'o:p') {
+        // Pasted-from-webpage wrapper tags only ever carry styling — unwrap, keep the text.
+        while (el.firstChild) el.parentNode.insertBefore(el.firstChild, el);
+        el.remove();
+      }
+    });
+  };
+  clean(doc.body);
+  return doc.body.innerHTML;
+}
+function insertAtSelection(node) {
+  const sel = window.getSelection();
+  if (!sel.rangeCount || !editArea.contains(sel.anchorNode)) {
+    editArea.appendChild(node);
+    return;
+  }
+  const range = sel.getRangeAt(0);
+  range.deleteContents();
+  const lastChild = node.nodeType === Node.DOCUMENT_FRAGMENT_NODE ? node.lastChild : node;
+  range.insertNode(node);
+  if (lastChild) {
+    const after = document.createRange();
+    after.setStartAfter(lastChild);
+    after.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(after);
+  }
+}
+editArea.addEventListener('paste', (e) => {
+  e.preventDefault();
+  // execCommand('insertHTML', ...) called from inside a paste handler is unreliable in
+  // Chrome — it can ignore the string given and re-insert the original (unclean) clipboard
+  // HTML instead. Insert via Range/Selection directly so the cleaned content actually lands.
+  const html = e.clipboardData && e.clipboardData.getData('text/html');
+  if (html) {
+    const frag = document.createRange().createContextualFragment(cleanPastedHtml(html));
+    insertAtSelection(frag);
+  } else {
+    const text = (e.clipboardData && e.clipboardData.getData('text/plain')) || '';
+    insertAtSelection(document.createTextNode(text));
+  }
+  editDirty = true;
+});
 editCancelBtn.onclick = requestCloseEdit;
 editOverlay.onclick = (e) => { if (e.target === editOverlay) requestCloseEdit(); };
 
