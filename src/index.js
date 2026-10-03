@@ -1633,7 +1633,7 @@ function openEditPage(key, url) {
   editKey = key;
   editArea.innerHTML = '';
   showBanner('', false);
-  fetch(url)
+  fetch(url, { cache: 'no-store' })
     .then((r) => { if (!r.ok) throw new Error('Failed to load page'); return r.text(); })
     .then((html) => {
       editDoc = new DOMParser().parseFromString(html, 'text/html');
@@ -3736,9 +3736,14 @@ export default {
         return Response.redirect(linkTarget, 302);
       }
 
+      const contentType = (object.httpMetadata && object.httpMetadata.contentType) || '';
+      // Saved HTML pages are editable in place (see /admin/update-page), so unlike every
+      // other upload they can change after the fact — never let a browser cache one as
+      // immutable, or an edit can appear to silently "not save" when reopened.
+      const isEditablePage = contentType.startsWith('text/html');
       const headers = new Headers();
       object.writeHttpMetadata(headers);
-      headers.set('cache-control', entry ? 'private, no-store' : 'public, max-age=31536000, immutable');
+      headers.set('cache-control', (entry || isEditablePage) ? 'private, no-store' : 'public, max-age=31536000, immutable');
       headers.set('etag', object.httpEtag);
       return new Response(object.body, { headers });
     }
